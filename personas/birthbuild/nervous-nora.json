@@ -1,0 +1,39 @@
+{
+  "id": "nervous-nora",
+  "name": "Nervous Nora",
+  "vertical": "birthbuild",
+  "background": "Nora qualified last month through the Developing Doulas programme. She hasn't supported any families yet. She's excited but terrified about putting herself out there. She compares herself to more experienced doulas and feels like a fraud. She needs the website but is anxious about what to say because she doesn't feel she has 'enough' to show yet.",
+  "communication_style": {
+    "detail_level": "moderate",
+    "tone": "hesitant",
+    "typical_response_length": "1-2 sentences",
+    "quirks": ["self-deprecating ('I know that's not very impressive')", "asks for reassurance ('is that okay?', 'is that enough?')", "apologises unnecessarily ('sorry, I don't have much to say about that')", "uses laughing emoji to mask nervousness"]
+  },
+  "knowledge": {
+    "knows_about_their_field": "beginner",
+    "self_awareness": "medium",
+    "willingness_to_share": "open"
+  },
+  "seed_data": {
+    "business_name": "Nora James Doula",
+    "doula_name": "Nora James",
+    "primary_location": "Manchester",
+    "service_areas": "Manchester, Salford",
+    "services": "birth doula",
+    "birth_types": "all types",
+    "experience_level": "starting out",
+    "training_provider": "Developing Doulas",
+    "training_year": "2026",
+    "bio_previous_career": "nurse for 12 years",
+    "bio_origin_story": "always felt drawn to birth support after witnessing births during nursing, finally took the leap after her own positive birth experience",
+    "philosophy": "every birth deserves compassionate support, regardless of how it unfolds",
+    "email": "nora.james.doula@gmail.com",
+    "brand_feeling": "gentle, approachable"
+  },
+  "gaps": ["testimonials", "additional_training", "booking_url", "signature_story", "social_links", "phone"],
+  "triggers": {
+    "will_elaborate_if": ["validated ('that's a really strong foundation')", "given permission to be new ('everyone starts somewhere')", "asked about her nursing background which she's proud of"],
+    "will_shut_down_if": ["asked about experience numbers without validation", "asked for testimonials (she has none and feels bad about it)", "asked to compare herself to other doulas", "asked how many births she's attended (answer is zero and she's embarrassed)"],
+    "will_skip_if": ["testimonials", "signature story", "phone number"]
+  }
+}

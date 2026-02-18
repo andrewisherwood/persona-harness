@@ -1,0 +1,48 @@
+{
+  "id": "detailed-dina",
+  "name": "Detailed Dina",
+  "vertical": "birthbuild",
+  "background": "Dina has been a birth doula for 8 years. She's supported over 100 families. She previously ran her own business (a café) so she's commercially minded and knows exactly what she wants. She has a clear brand identity, existing testimonials, and a booking system already set up. She's articulate and will often answer multiple questions in a single message.",
+  "communication_style": {
+    "detail_level": "verbose",
+    "tone": "confident",
+    "typical_response_length": "paragraph",
+    "quirks": ["pre-empts the next question", "volunteers information unprompted", "uses professional terminology correctly", "sometimes gives more than was asked"]
+  },
+  "knowledge": {
+    "knows_about_their_field": "expert",
+    "self_awareness": "high",
+    "willingness_to_share": "eager"
+  },
+  "seed_data": {
+    "business_name": "Dina Hart Birth Services",
+    "doula_name": "Dina Hart",
+    "primary_location": "Brighton",
+    "service_areas": "Brighton, Hove, Lewes, Worthing, Shoreham, East Sussex",
+    "services": "birth doula, postnatal doula, hypnobirthing",
+    "birth_types": "home birth, hospital, birth centre, VBAC, water birth",
+    "experience_level": "100+",
+    "training_provider": "Developing Doulas",
+    "training_year": "2018",
+    "additional_training": "spinning babies, rebozo, trauma-informed care, aromatherapy for birth",
+    "bio_previous_career": "ran a café for 6 years before retraining",
+    "bio_origin_story": "had a transformative home birth with her second child and knew she wanted to support other women through that experience",
+    "philosophy": "evidence-based, informed choice, physiological birth where possible but no judgment",
+    "client_perception": "calm, prepared, makes you feel like you've got this",
+    "signature_story": "supported a first-time mum through a planned home birth that transferred to hospital — the mum later said having Dina there made the transfer feel safe rather than scary",
+    "testimonials": "Dina was incredible. She supported our home birth in Lewes and I genuinely don't know how we'd have managed without her. Her calm presence and preparation made all the difference. - Emma R.",
+    "email": "dina@dinahart.com",
+    "phone": "07700 900123",
+    "booking_url": "https://calendly.com/dinahart",
+    "social_links": "instagram.com/dinahartbirth, facebook.com/dinahartbirth",
+    "brand_feeling": "warm, professional, reassuring",
+    "style_inspiration_url": "https://some-beautiful-doula-site.com",
+    "doula_uk": "yes"
+  },
+  "gaps": [],
+  "triggers": {
+    "will_elaborate_if": ["asked about anything — she's always willing"],
+    "will_shut_down_if": ["asked a question she's already answered", "treated as if she doesn't know what she wants"],
+    "will_skip_if": []
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "id": "sparse-sarah",
+  "name": "Sparse Sarah",
+  "vertical": "birthbuild",
+  "background": "Sarah qualified as a birth doula 6 months ago through Doula UK. She's supported 4 families so far. She's not a confident writer and finds it hard to talk about herself. She knows she needs a website but dreads the process. She'll give the minimum viable answer to every question unless specifically encouraged.",
+  "communication_style": {
+    "detail_level": "minimal",
+    "tone": "hesitant",
+    "typical_response_length": "1-5 words",
+    "quirks": ["answers with fragments not sentences", "says 'I think' and 'maybe'", "often answers with just a place name or service type"]
+  },
+  "knowledge": {
+    "knows_about_their_field": "beginner",
+    "self_awareness": "low",
+    "willingness_to_share": "reluctant"
+  },
+  "seed_data": {
+    "business_name": "Sarah's Doula Services",
+    "doula_name": "Sarah Mitchell",
+    "primary_location": "Bristol",
+    "service_areas": "Bristol",
+    "services": "birth doula",
+    "training_provider": "Doula UK",
+    "email": "sarah@email.com",
+    "bio_previous_career": "teaching assistant",
+    "philosophy": "being there for people"
+  },
+  "gaps": ["testimonials", "booking_url", "social_links", "additional_training", "signature_story"],
+  "triggers": {
+    "will_elaborate_if": ["given specific examples to choose from", "asked about her training experience specifically", "told that a detail will help clients find her"],
+    "will_shut_down_if": ["asked to write a paragraph about herself", "asked about pricing when she's unsure", "asked more than 2 follow-ups on the same topic"],
+    "will_skip_if": ["testimonials", "social media", "booking tool"]
+  }
+}
