@@ -163,14 +163,34 @@ export function createRunsRouter(orchestrator: Orchestrator) {
 
   // GET /api/runs/:id/stream — SSE stream for run progress
   router.get("/:id/stream", (req, res) => {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+    // Write an initial SSE comment to fully establish the connection.
+    // Some HTTP clients and proxies require at least one write to flush
+    // the response headers through the full pipeline.
+    res.write(":ok\n\n");
 
     const runId = req.params.id;
-    if (!activeStreams.has(runId)) activeStreams.set(runId, new Set());
+
+    // If no active run exists for this ID, check if it already completed
+    // on disk. Without this check, late-joining clients would hang forever
+    // because the run's completion callback already fired and deleted the
+    // activeStreams entry.
+    if (!activeStreams.has(runId)) {
+      const summaryPath = join(RUNS_DIR, runId, "summary.json");
+      if (existsSync(summaryPath)) {
+        res.write(`event: done\ndata: {}\n\n`);
+      } else {
+        res.write(
+          `event: error\ndata: ${JSON.stringify({ error: "Run not found or already completed" })}\n\n`,
+        );
+      }
+      res.end();
+      return;
+    }
+
     activeStreams.get(runId)!.add(res);
 
     req.on("close", () => {
