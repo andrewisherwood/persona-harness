@@ -6,6 +6,7 @@ export interface SupabaseConfig {
   serviceRoleKey: string;
   testTenantId: string;
   testUserId: string;
+  authToken: string; // User JWT for edge function calls
 }
 
 export function validateConfig(config: SupabaseConfig): void {
@@ -14,6 +15,7 @@ export function validateConfig(config: SupabaseConfig): void {
   if (!config.serviceRoleKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
   if (!config.testTenantId) throw new Error("TEST_TENANT_ID is required");
   if (!config.testUserId) throw new Error("TEST_USER_ID is required");
+  if (!config.authToken) throw new Error("AUTH_TOKEN is required");
 }
 
 export function buildSupabaseConfig(env: Record<string, string | undefined>): SupabaseConfig {
@@ -23,6 +25,7 @@ export function buildSupabaseConfig(env: Record<string, string | undefined>): Su
     serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY ?? "",
     testTenantId: env.TEST_TENANT_ID ?? "",
     testUserId: env.TEST_USER_ID ?? "",
+    authToken: env.AUTH_TOKEN ?? "",
   };
 }
 

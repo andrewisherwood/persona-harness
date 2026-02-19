@@ -2,7 +2,8 @@ import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync } from 
 import { join } from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import type { RunConfig, RunResult, PersonaRunResult, ProgressCallback } from "./types.js";
-import { EdgeFunctionClient } from "./edge-function-client.js";
+import { EdgeFunctionClient, extractTextFromResponse, isConversationComplete } from "./edge-function-client.js";
+import type { ChatMessage } from "./edge-function-client.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { SupabaseConfig } from "./supabase-client.js";
 import { createServiceClient, createTestSiteSpec, getSiteSpec, upsertSiteSpec } from "./supabase-client.js";
@@ -20,7 +21,7 @@ export class Orchestrator {
     this.supabaseConfig = supabaseConfig;
     this.edgeClient = new EdgeFunctionClient({
       supabaseUrl: supabaseConfig.supabaseUrl,
-      anonKey: supabaseConfig.anonKey,
+      authToken: supabaseConfig.authToken,
     });
     this.anthropic = new Anthropic();
   }
@@ -118,15 +119,17 @@ export class Orchestrator {
     let previewUrl: string | null = null;
     if (!config.skipBuild) {
       onProgress({ runId: config.id, persona: persona.id, step: "building" });
-      await this.edgeClient.triggerBuild(siteSpecId);
-      await this.edgeClient.waitForBuild(siteSpecId, async () => {
-        const spec = await getSiteSpec(supabase, siteSpecId);
-        return (spec.status as string | undefined) ?? "unknown";
-      });
+      // TODO: Generate HTML/CSS files from site_spec before calling build.
+      // The /build endpoint requires files[] with generated content.
+      // For now, pass an empty files array as a placeholder.
+      const buildResult = await this.edgeClient.triggerBuild(siteSpecId, []);
+      previewUrl = buildResult.preview_url;
 
       onProgress({ runId: config.id, persona: persona.id, step: "deploying" });
-      const publishResult = await this.edgeClient.triggerPublish(siteSpecId);
-      previewUrl = publishResult.previewUrl;
+      const publishResult = await this.edgeClient.triggerPublish(siteSpecId, "publish");
+      if (publishResult.deploy_url) {
+        previewUrl = publishResult.deploy_url;
+      }
       writeFileSync(join(personaDir, "preview-url.txt"), previewUrl);
     }
 
@@ -155,29 +158,28 @@ export class Orchestrator {
     await upsertSiteSpec(supabase, siteSpecId, savedSpec);
 
     onProgress({ runId: config.id, persona: personaId, step: "building" });
-    await this.edgeClient.triggerBuild(siteSpecId);
-    await this.edgeClient.waitForBuild(siteSpecId, async () => {
-      const spec = await getSiteSpec(supabase, siteSpecId);
-      return (spec.status as string | undefined) ?? "unknown";
-    });
+    // TODO: Generate HTML/CSS files from saved spec before calling build.
+    // The /build endpoint requires files[] with generated content.
+    const buildResult = await this.edgeClient.triggerBuild(siteSpecId, []);
+    const previewUrl = buildResult.preview_url;
 
     onProgress({ runId: config.id, persona: personaId, step: "deploying" });
-    const publishResult = await this.edgeClient.triggerPublish(siteSpecId);
-    const previewUrl = publishResult.previewUrl;
-    writeFileSync(join(personaDir, "preview-url.txt"), previewUrl);
+    const publishResult = await this.edgeClient.triggerPublish(siteSpecId, "publish");
+    const deployUrl = publishResult.deploy_url ?? previewUrl;
+    writeFileSync(join(personaDir, "preview-url.txt"), deployUrl);
 
     const cost = costTracker.getSummary();
     writeFileSync(join(personaDir, "cost.json"), JSON.stringify(cost, null, 2));
 
     onProgress({ runId: config.id, persona: personaId, step: "complete" });
 
-    return { personaId, conversation: [], siteSpec: savedSpec, evaluation: null, cost, previewUrl, error: null };
+    return { personaId, conversation: [], siteSpec: savedSpec, evaluation: null, cost, previewUrl: deployUrl, error: null };
   }
 
   private async runConversation(
     config: RunConfig,
     persona: Persona,
-    siteSpecId: string,
+    _siteSpecId: string,
     costTracker: CostTracker,
     onProgress: ProgressCallback,
   ): Promise<Array<{ turn: number; role: string; content: string; timestamp: string }>> {
@@ -186,35 +188,35 @@ export class Orchestrator {
     const personaSystemPrompt = buildPersonaSystemPrompt(persona);
 
     const conversation: Array<{ turn: number; role: string; content: string; timestamp: string }> = [];
-    const chatHistory: Array<{ role: string; content: string }> = [];
+    // Messages array sent to the /chat edge function (full conversation history)
+    const chatMessages: ChatMessage[] = [];
     let turnNumber = 0;
 
-    // Get initial greeting
-    const greetingResponse = await this.edgeClient.sendChatMessage({
-      siteSpecId, message: "Hi", chatHistory: [],
-    });
+    // Get initial greeting by sending "Hi" via edge function
+    chatMessages.push({ role: "user", content: "Hi" });
+    const greetingResponse = await this.edgeClient.sendChatMessage(chatMessages);
+    const greetingText = extractTextFromResponse(greetingResponse) || "[The chatbot is ready]";
 
     turnNumber++;
     conversation.push({ turn: turnNumber, role: "user", content: "Hi", timestamp: new Date().toISOString() });
     turnNumber++;
-    conversation.push({ turn: turnNumber, role: "assistant", content: greetingResponse.message, timestamp: new Date().toISOString() });
+    conversation.push({ turn: turnNumber, role: "assistant", content: greetingText, timestamp: new Date().toISOString() });
 
-    chatHistory.push({ role: "user", content: "Hi" });
-    chatHistory.push({ role: "assistant", content: greetingResponse.message });
+    chatMessages.push({ role: "assistant", content: greetingText });
 
     onProgress({
       runId: config.id, persona: persona.id, step: "chatting",
-      turn: turnNumber, message: { role: "assistant", content: greetingResponse.message },
+      turn: turnNumber, message: { role: "assistant", content: greetingText },
     });
 
     // Persona sees chatbot messages as "user" (incoming) and its own replies as "assistant"
     const personaHistory: Anthropic.MessageParam[] = [
-      { role: "user", content: greetingResponse.message },
+      { role: "user", content: greetingText },
     ];
 
-    let isComplete = greetingResponse.is_complete ?? false;
+    let complete = isConversationComplete(greetingResponse);
 
-    while (turnNumber < config.maxTurns * 2 && !isComplete) {
+    while (turnNumber < config.maxTurns * 2 && !complete) {
       // Persona generates response
       const personaResponse = await this.anthropic.messages.create({
         model: config.personaModel,
@@ -244,20 +246,21 @@ export class Orchestrator {
         turn: turnNumber, message: { role: "user", content: personaText },
       });
 
-      // Send to chatbot via edge function
-      chatHistory.push({ role: "user", content: personaText });
-      const chatResponse = await this.edgeClient.sendChatMessage({
-        siteSpecId, message: personaText, chatHistory,
-      });
+      // Send to chatbot via edge function (full message history)
+      chatMessages.push({ role: "user", content: personaText });
+      const chatResponse = await this.edgeClient.sendChatMessage(chatMessages);
+
+      const botText = extractTextFromResponse(chatResponse) || "[The chatbot saved your information]";
 
       costTracker.recordEstimatedCall("chatbot_estimated", {
         messageCount: 1,
-        estimatedTokens: Math.ceil((personaText.length + chatResponse.message.length) / 4) * 3,
-        model: "claude-sonnet-4-5-20250929",
+        estimatedTokens: chatResponse.usage
+          ? chatResponse.usage.input_tokens + chatResponse.usage.output_tokens
+          : Math.ceil((personaText.length + botText.length) / 4) * 3,
+        model: chatResponse.model || "claude-sonnet-4-5-20250929",
       });
 
-      const botText = chatResponse.message || "[The chatbot saved your information]";
-      chatHistory.push({ role: "assistant", content: botText });
+      chatMessages.push({ role: "assistant", content: botText });
       personaHistory.push({ role: "user", content: botText });
 
       turnNumber++;
@@ -268,7 +271,7 @@ export class Orchestrator {
         turn: turnNumber, message: { role: "assistant", content: botText },
       });
 
-      isComplete = chatResponse.is_complete ?? false;
+      complete = isConversationComplete(chatResponse);
     }
 
     return conversation;
