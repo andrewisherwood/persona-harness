@@ -72,6 +72,12 @@ describe("cost-route", () => {
       expect(isSameUTCWeek(monday, thursday)).toBe(true);
     });
 
+    it("returns true for Sunday at end of the same ISO week", () => {
+      const thursday = new Date("2026-02-19T12:00:00Z");
+      const sunday = new Date("2026-02-22T23:59:59Z");
+      expect(isSameUTCWeek(sunday, thursday)).toBe(true);
+    });
+
     it("returns false for date in previous week", () => {
       const thursday = new Date("2026-02-19T12:00:00Z");
       const lastSunday = new Date("2026-02-15T23:59:59Z");

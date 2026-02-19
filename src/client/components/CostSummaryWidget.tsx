@@ -25,8 +25,8 @@ export function CostSummaryWidget() {
     return <div className="card cost-summary-error">Failed to load cost data</div>;
   }
 
-  const budgetUsedPct = data.budget > 0 ? (data.total / data.budget) * 100 : 0;
-  const budgetRemaining = Math.max(0, data.budget - data.total);
+  const budgetUsedPct = data.budget > 0 ? (data.today / data.budget) * 100 : 0;
+  const budgetRemaining = Math.max(0, data.budget - data.today);
   const barClass =
     budgetUsedPct >= 90 ? "danger" : budgetUsedPct >= 70 ? "warning" : "";
 
@@ -56,7 +56,7 @@ export function CostSummaryWidget() {
         <div className="cost-budget-header">
           <span className="cost-budget-label">Budget</span>
           <span className="cost-budget-remaining">
-            {formatUsd(budgetRemaining)} remaining of {formatUsd(data.budget)}
+            {formatUsd(budgetRemaining)} remaining of {formatUsd(data.budget)}/day
           </span>
         </div>
         <div className="cost-budget-bar">
