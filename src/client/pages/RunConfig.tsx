@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi, postApi } from "../hooks/useApi.js";
+import { CostSummaryWidget } from "../components/CostSummaryWidget.js";
 import "./RunConfig.css";
 
 interface PersonaSummary { id: string; name: string; background: string }
@@ -57,6 +58,8 @@ export function RunConfig() {
   return (
     <div className="run-config">
       <h2>Run Configuration</h2>
+
+      <CostSummaryWidget />
 
       <section className="config-section card">
         <h3>Personas</h3>

@@ -6,6 +6,7 @@ import { personasRouter } from "./routes/personas.js";
 import { promptsRouter } from "./routes/prompts.js";
 import { createRunsRouter } from "./routes/runs.js";
 import { configRouter } from "./routes/config.js";
+import { costRouter } from "./routes/cost.js";
 import { Orchestrator } from "./engine/orchestrator.js";
 import { buildSupabaseConfig } from "./engine/supabase-client.js";
 
@@ -29,6 +30,7 @@ export function createApp(): Express {
   app.use("/api/prompts", promptsRouter);
   app.use("/api/runs", createRunsRouter(orchestrator));
   app.use("/api/config", configRouter);
+  app.use("/api/cost", costRouter);
 
   return app;
 }
