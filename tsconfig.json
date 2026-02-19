@@ -5,15 +5,15 @@
     "moduleResolution": "Node16",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": ".",
     "resolveJsonModule": true,
     "declaration": true,
     "sourceMap": true,
-    "forceConsistentCasingInFileNames": true,
-    "noUncheckedIndexedAccess": true
+    "outDir": "dist",
+    "rootDir": ".",
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx"
   },
-  "include": ["**/*.ts"],
+  "include": ["src/**/*", "lib/**/*", "personas/**/*", "criteria/**/*", "run.ts", "vite.config.ts"],
   "exclude": ["node_modules", "dist", "runs"]
 }
