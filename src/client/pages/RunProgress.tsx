@@ -8,7 +8,7 @@ const STEPS = ["chatting", "evaluating", "building", "deploying", "complete"];
 
 export function RunProgress() {
   const { runId } = useParams<{ runId: string }>();
-  const { messages, isDone } = useSSE(runId ? `/api/runs/${runId}/stream` : null);
+  const { messages, isDone, error } = useSSE(runId ? `/api/runs/${runId}/stream` : null);
   const feedRef = useRef<HTMLDivElement>(null);
 
   // Extract chat messages
@@ -42,8 +42,8 @@ export function RunProgress() {
         <h2>Run Progress</h2>
         <div className="progress-meta">
           {currentPersona && <span className="badge badge-running">{currentPersona}</span>}
-          <span className={`badge badge-${isDone ? "pass" : "running"}`}>
-            {isDone ? "Complete" : latestStep}
+          <span className={`badge badge-${error ? "fail" : isDone ? "pass" : "running"}`}>
+            {error ? "Error" : isDone ? "Complete" : latestStep}
           </span>
           {!isDone && <span className="pulse-dot" />}
         </div>
@@ -64,6 +64,12 @@ export function RunProgress() {
           );
         })}
       </div>
+
+      {error && (
+        <div className="card" style={{ padding: "var(--space-4)", borderLeft: "3px solid var(--color-fail)", marginBottom: "var(--space-4)" }}>
+          <strong style={{ color: "var(--color-fail)" }}>Run failed:</strong> {error}
+        </div>
+      )}
 
       <div className="conversation-feed card" ref={feedRef}>
         {chatMessages.length === 0 && !isDone && (

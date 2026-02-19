@@ -72,6 +72,7 @@ export class Orchestrator {
       return await this.executeFullPipeline(config, persona, personaDir, costTracker, onProgress);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
+      onProgress({ runId: config.id, persona: personaId, step: "error" });
       return {
         personaId,
         conversation: [],
