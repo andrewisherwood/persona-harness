@@ -54,13 +54,16 @@ export async function simulateConversation(
     timestamp: new Date().toISOString(),
   });
   chatbotHistory.push({ role: "assistant", content: greeting.text });
-  // Persona sees the greeting as the first assistant message
-  personaHistory.push({ role: "assistant", content: greeting.text });
+  // Persona model sees chatbot messages as "user" (incoming) and its own replies as "assistant"
+  personaHistory.push({ role: "user", content: greeting.text });
 
   while (turnNumber < maxTurns) {
     // Persona responds
     turnNumber++;
-    const userResponse = await personaAgent.respond(personaHistory);
+    let userResponse = await personaAgent.respond(personaHistory);
+    if (!userResponse.trim()) {
+      userResponse = "Okay.";
+    }
 
     turns.push({
       turn_number: turnNumber,
@@ -69,7 +72,7 @@ export async function simulateConversation(
       timestamp: new Date().toISOString(),
     });
     chatbotHistory.push({ role: "user", content: userResponse });
-    personaHistory.push({ role: "user", content: userResponse });
+    personaHistory.push({ role: "assistant", content: userResponse });
 
     // Chatbot responds
     turnNumber++;
@@ -80,17 +83,18 @@ export async function simulateConversation(
         (tc.input as Record<string, unknown>).next_step === "complete",
     );
 
+    const botText = botResponse.text || "[The chatbot saved your information]";
     turns.push({
       turn_number: turnNumber,
       role: "assistant",
-      content: botResponse.text,
+      content: botText,
       tool_calls: botResponse.toolCalls.length > 0 ? botResponse.toolCalls : undefined,
       fields_written: Object.keys(botResponse.fieldsWritten).length > 0 ? botResponse.fieldsWritten : undefined,
       density_score: calculateDensityScore(chatbotClient.getSpec()),
       timestamp: new Date().toISOString(),
     });
-    chatbotHistory.push({ role: "assistant", content: botResponse.text });
-    personaHistory.push({ role: "assistant", content: botResponse.text });
+    chatbotHistory.push({ role: "assistant", content: botText });
+    personaHistory.push({ role: "user", content: botText });
 
     if (isConversationComplete) break;
   }

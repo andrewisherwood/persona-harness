@@ -70,7 +70,7 @@ program
   .option("--vertical <vertical>", "Run all personas for a vertical", "birthbuild")
   .option("--persona <id>", "Run a single persona")
   .option("--max-turns <n>", "Maximum conversation turns", "60")
-  .option("--judge-model <model>", "Model for judge evaluator", "claude-opus-4-5-20250514")
+  .option("--judge-model <model>", "Model for judge evaluator", "claude-sonnet-4-5-20250929")
   .option("--chatbot-model <model>", "Model for target chatbot", "claude-sonnet-4-5-20250929")
   .option("--persona-model <model>", "Model for persona simulator", "claude-sonnet-4-5-20250929")
   .action(async (opts) => {
