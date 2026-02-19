@@ -2,10 +2,16 @@
 
 Automated conversation testing harness for Dopamine Labs chatbot products. Simulates user personas against a chatbot, evaluates conversations with an LLM judge, and reports quality scores with regression detection.
 
+**v2** adds a React dashboard, production Supabase edge function integration, full build pipeline, A/B prompt comparison, and cost tracking.
+
 ## Tech Stack
 
 - **Runtime:** Node.js + TypeScript (strict mode)
 - **LLM:** Anthropic Claude via `@anthropic-ai/sdk`
+- **Dashboard:** React 18 + Vite 7 + React Router 7
+- **API Server:** Express 5 (embedded, proxied through Vite in dev)
+- **Production Integration:** Supabase edge functions (`/chat`, `/build`, `/publish`)
+- **Streaming:** Server-Sent Events for real-time run progress
 - **CLI:** Commander
 - **Testing:** Vitest
 - **Output:** chalk@4 for coloured terminal output
@@ -14,70 +20,170 @@ Automated conversation testing harness for Dopamine Labs chatbot products. Simul
 
 ```
 persona-harness/
-├── personas/           # Persona type definitions + JSON persona files
-│   ├── schema.ts       # Persona, SiteSpec, ConversationTurn, EvaluationResult types
-│   └── birthbuild/     # BirthBuild vertical personas (JSON)
-├── criteria/           # Evaluation criteria definitions
-│   ├── universal.ts    # 7 universal criteria (all personas)
-│   └── birthbuild/     # Per-persona criteria with hard-fail checks
-├── prompts/            # Extracted system prompts + tool definitions
-│   └── birthbuild/     # system-prompt.md + tools.json
-├── lib/                # Core modules
-│   ├── simulator.ts    # Conversation loop orchestration
-│   ├── persona-agent.ts # LLM-as-user (Sonnet)
-│   ├── chatbot-client.ts # ChatbotClient interface + Mode B impl
-│   ├── spec-accumulator.ts # In-memory SiteSpec + tool call mapping
-│   ├── judge.ts        # LLM-as-judge evaluator (Opus)
-│   ├── density.ts      # Density scoring (adapted from BirthBuild)
-│   ├── reporter.ts     # JSON + markdown report generation
-│   └── regression.ts   # Run-to-run diff + regression detection
-├── runs/               # Output directory (gitignored)
-├── run.ts              # CLI entry point
-└── tests/              # Vitest test files
+├── src/
+│   ├── client/               # React dashboard
+│   │   ├── main.tsx          # React entry point
+│   │   ├── App.tsx           # Router + Layout
+│   │   ├── styles/           # Design tokens + global CSS
+│   │   ├── components/       # Reusable components (Layout, ChatBubble, ScoreCard, etc.)
+│   │   ├── pages/            # Page components (RunConfig, RunProgress, Results, etc.)
+│   │   └── hooks/            # useApi, useSSE
+│   └── server/               # Express API server
+│       ├── index.ts          # App factory (createApp) + listener
+│       ├── routes/           # API routes (runs, personas, prompts, config, cost)
+│       └── engine/           # Core engine
+│           ├── orchestrator.ts   # Run execution (full-pipeline, build-only)
+│           ├── edge-function-client.ts  # HTTP client for Supabase edge functions
+│           ├── supabase-client.ts       # Supabase config + site_spec CRUD
+│           ├── cost-tracker.ts          # Token cost accounting
+│           └── types.ts                 # RunConfig, RunResult, RunProgress types
+├── lib/                      # Original CLI core modules
+│   ├── simulator.ts          # Conversation loop orchestration
+│   ├── persona-agent.ts      # LLM-as-user (builds persona system prompt)
+│   ├── chatbot-client.ts     # ChatbotClient interface + Mode B impl
+│   ├── spec-accumulator.ts   # In-memory SiteSpec + tool call mapping
+│   ├── judge.ts              # LLM-as-judge evaluator
+│   ├── density.ts            # Density scoring
+│   ├── reporter.ts           # JSON + markdown report generation
+│   └── regression.ts         # Run-to-run diff + regression detection
+├── personas/                 # Persona definitions
+│   ├── schema.ts             # Types: Persona, SiteSpec, ConversationTurn, etc.
+│   └── birthbuild/           # BirthBuild personas (JSON)
+├── criteria/                 # Evaluation criteria
+│   ├── universal.ts          # 7 universal criteria
+│   └── birthbuild/           # Per-persona criteria with hard-fail checks
+├── prompts/                  # System prompts + tool definitions
+│   └── birthbuild/           # system-prompt.md + tools.json
+├── scripts/
+│   └── smoke-test.ts         # Manual E2E integration test
+├── runs/                     # Output directory (gitignored)
+├── run.ts                    # CLI entry point
+├── tests/                    # Vitest test files (90 tests, 15 files)
+├── docs/
+│   ├── edge-function-contracts.md  # Production edge function HTTP contracts
+│   └── plans/                      # Design + implementation plans
+├── vite.config.ts            # Vite config with Express proxy
+├── index.html                # Vite HTML entry point
+└── harness-config.json       # Runtime config (budget, default models)
 ```
 
 ## Commands
 
 ```bash
+# Dashboard (v2)
+npm run dev               # Start dashboard + API server (Vite + Express)
+npm run dev:client        # Vite dev server only
+npm run dev:server        # Express API server only (tsx watch)
+
+# CLI (v1 — still works)
 npm run harness -- run --vertical birthbuild --prompt ./prompts/birthbuild/system-prompt.md --tools ./prompts/birthbuild/tools.json
 npm run harness -- run --persona sparse-sarah --prompt ... --tools ...
 npm run harness -- diff <run1> <run2>
 npm run harness -- report <run-dir>
-npm test                # run all tests
-npm run typecheck       # type check without emitting
+
+# Testing
+npm test                  # Run all 90 tests
+npm run test:watch        # Watch mode
+npm run typecheck         # tsc --noEmit
+
+# Manual integration test (requires .env with real credentials)
+npx tsx scripts/smoke-test.ts
 ```
+
+## Environment Variables
+
+Required for dashboard runs (in `.env`):
+- `ANTHROPIC_API_KEY` — Anthropic API key (for persona agent + judge)
+- `SUPABASE_URL` — Supabase project URL
+- `SUPABASE_ANON_KEY` — Supabase anon key
+- `SUPABASE_SERVICE_ROLE_KEY` — Service role key (for site_spec CRUD)
+- `AUTH_TOKEN` — User JWT token (for edge function auth — no Bearer prefix)
+- `TEST_TENANT_ID` — Test tenant UUID
+- `TEST_USER_ID` — Test user UUID
+- `API_PORT` — Express server port (default: 3001)
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Server health check |
+| GET | `/api/personas` | List all personas |
+| GET | `/api/personas/:id` | Get persona details |
+| GET | `/api/prompts` | List available prompts |
+| GET | `/api/prompts/:id` | Get prompt content |
+| GET | `/api/config` | Get harness config |
+| PUT | `/api/config` | Update harness config |
+| GET | `/api/runs` | List all runs |
+| GET | `/api/runs/:id` | Get run summary |
+| POST | `/api/runs` | Start a new run |
+| GET | `/api/runs/:id/stream` | SSE stream for run progress |
+| GET | `/api/runs/:id/:persona/conversation` | Get conversation |
+| GET | `/api/runs/:id/:persona/site-spec` | Get site spec |
+| GET | `/api/runs/:id/:persona/evaluation` | Get evaluation |
+| GET | `/api/runs/:id/:persona/cost` | Get cost breakdown |
+| GET | `/api/cost/summary` | Aggregated cost summary |
 
 ## Coding Standards
 
 - TypeScript strict mode, no `any`
 - Named exports only (no default exports)
-- Functional style preferred; classes only for stateful modules (SpecAccumulator)
-- All LLM calls go through the Anthropic SDK, never raw fetch
+- Functional style preferred; classes only for stateful modules (Orchestrator, CostTracker, SpecAccumulator)
+- Edge function calls use `fetch` via `EdgeFunctionClient`; direct LLM calls use Anthropic SDK
 - British English in user-facing strings (colour, organisation)
-- Error handling: throw typed errors, catch at CLI boundary
+- Error handling: throw typed errors, catch at boundaries (CLI, Express routes)
 - All file I/O uses absolute paths resolved from project root
+- React components use named function exports
+- CSS uses BirthBuild design tokens from `src/client/styles/tokens.css`
 
-## Architecture Patterns
+## Architecture
 
-- **ChatbotClient interface** — abstraction over how we talk to the chatbot. Mode B (direct Claude API) is the only implementation now. Mode A (live Supabase endpoint) can be added later as a new class.
-- **SpecAccumulator** — maintains an in-memory SiteSpec. Tool calls from the chatbot are mapped to spec field updates using the same logic as BirthBuild's `mapToolCallToSpecUpdate`. Exposes `getSpec()` for density scoring at any point.
-- **Persona agent isolation** — the persona simulator only sees chatbot text responses. Tool calls, tool results, and system prompts are invisible, matching a real user's experience.
-- **Tool-use loop** — Mode B mirrors BirthBuild's edge function: when Claude returns `stop_reason === "tool_use"`, apply tool calls to SpecAccumulator, return tool_result messages, continue until text is produced. Max 5 iterations.
-- **Structured judge output** — the judge is forced to return structured JSON by defining a `submit_evaluation` tool that it must call.
+### Two Execution Modes
 
-## Three LLM Roles
+1. **CLI (v1)** — `run.ts` uses `lib/` modules directly. Chatbot is simulated locally via Claude API with system prompt + tools (Mode B). Self-contained, no Supabase needed.
+
+2. **Dashboard (v2)** — `src/server/` orchestrator calls production Supabase edge functions. The chatbot is the real BirthBuild `/chat` endpoint. Persona agent and judge still call Claude directly via Anthropic SDK.
+
+### Edge Function Contracts
+
+See `docs/edge-function-contracts.md` for full details. Key points:
+- `/chat` takes `{ messages }` (full history), returns raw Claude API format with `content[]` blocks
+- Completion detected via `mark_step_complete` tool call with `next_step === "complete"`
+- Auth uses bare JWT token (no Bearer prefix) in `Authorization` header
+- `/build` requires pre-generated `files[]` — generation functions not yet integrated
+
+### Dashboard Architecture
+
+- Express `createApp()` factory enables testing without side effects
+- `dotenv.config()` only runs in production (not during tests)
+- SSE streams tracked per-run via `activeStreams` Map
+- Late-joining SSE clients get immediate `done` or `error` if run already completed
+- Vite proxies `/api` to Express in dev mode
+
+### Three LLM Roles
 
 | Role | Model | Purpose |
 |------|-------|---------|
 | Persona Simulator | claude-sonnet-4-5-20250929 | Acts as the user |
-| Target Chatbot | claude-sonnet-4-5-20250929 | System under test |
-| Judge Evaluator | claude-opus-4-5-20250514 | Scores conversations |
+| Target Chatbot | Production edge function | System under test |
+| Judge Evaluator | claude-sonnet-4-5-20250929 | Scores conversations |
+
+### Cost Tracking
+
+- `CostTracker` records direct calls (persona, judge) with exact token counts
+- Edge function calls are estimated from response `usage` field
+- Model rates: Sonnet ($3/$15 per M tokens), Opus ($15/$75), Haiku ($0.80/$4)
+- Daily budget tracked in `harness-config.json`, displayed on dashboard
 
 ## Key Constraints
 
 - Persona agent NEVER sees the chatbot's system prompt or tool calls
-- Max 60 conversation turns per simulation
-- Max 5 tool-use loop iterations per chatbot response
+- Max 60 conversation turns per simulation (configurable in dashboard)
 - Judge uses a single `submit_evaluation` tool for structured output
-- Runs are stored as timestamped directories under `runs/`
-- Regression detection compares against the most recent previous run
+- Runs stored as timestamped directories under `runs/`
+- CLI and dashboard share persona definitions and evaluation criteria
+- Dashboard runs require real Supabase credentials; CLI runs are self-contained
+
+## Known Limitations
+
+- Build pipeline TODO: `/build` endpoint requires pre-generated HTML/CSS files, but generation edge functions (`/generate-design-system`, `/generate-page`) are not yet integrated into the orchestrator
+- Pre-existing CLI runs lack `totalCost` field — cost aggregation shows $0 for them
