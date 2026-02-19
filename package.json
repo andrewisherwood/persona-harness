@@ -7,6 +7,9 @@
     "doc": "docs"
   },
   "scripts": {
+    "dev": "concurrently \"npx tsx watch src/server/index.ts\" \"npx vite\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch src/server/index.ts",
     "harness": "tsx run.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -26,13 +29,27 @@
   "homepage": "https://github.com/andrewisherwood/persona-harness#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.77.0",
+    "@supabase/supabase-js": "^2.97.0",
     "chalk": "^4.1.2",
-    "commander": "^14.0.3"
+    "commander": "^14.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.2.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "concurrently": "^9.2.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
+    "vite": "^7.3.1",
     "vitest": "^4.0.18"
   }
 }
