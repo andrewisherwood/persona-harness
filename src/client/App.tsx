@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Layout } from "./components/Layout.js";
+import { RunConfig } from "./pages/RunConfig.js";
 
 function Placeholder({ title }: { title: string }) {
   return <div className="card"><h2>{title}</h2><p>Coming soon...</p></div>;
@@ -10,7 +11,7 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route path="/" element={<Placeholder title="Run Configuration" />} />
+          <Route path="/" element={<RunConfig />} />
           <Route path="/progress/:runId" element={<Placeholder title="Run Progress" />} />
           <Route path="/results" element={<Placeholder title="Results" />} />
           <Route path="/results/:runId" element={<Placeholder title="Run Detail" />} />

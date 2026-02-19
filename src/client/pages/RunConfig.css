@@ -1,0 +1,27 @@
+.run-config { display: flex; flex-direction: column; gap: var(--space-6); max-width: 800px; }
+.config-section { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-3); }
+.persona-card {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  padding: var(--space-4); border: 2px solid var(--color-border);
+  border-radius: var(--radius-md); cursor: pointer; transition: all 0.15s;
+}
+.persona-card:hover { border-color: var(--color-primary-light); }
+.persona-card.selected { border-color: var(--color-primary); background: #E8F0E4; }
+.persona-card input[type="checkbox"] { margin-top: 2px; }
+.persona-card strong { display: block; font-size: var(--text-sm); }
+.persona-bg { font-size: var(--text-xs); color: var(--color-text-muted); display: block; margin-top: 2px; }
+.persona-actions { display: flex; gap: var(--space-2); }
+
+.mode-toggle { display: flex; gap: var(--space-2); }
+.mode-desc { font-size: var(--text-sm); color: var(--color-text-muted); }
+
+.ab-toggle { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: 500; }
+.ab-prompt-b { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-sm); }
+
+.advanced-grid { display: flex; flex-direction: column; gap: var(--space-3); padding-top: var(--space-4); }
+.advanced-grid label { font-size: var(--text-sm); display: flex; align-items: center; gap: var(--space-2); }
+.range-value { font-weight: 600; min-width: 30px; }
+
+.start-btn { padding: var(--space-3) var(--space-8); font-size: var(--text-lg); align-self: flex-start; }
