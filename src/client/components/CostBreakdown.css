@@ -1,0 +1,5 @@
+.cost-table { width: 100%; font-size: var(--text-sm); border-collapse: collapse; margin-top: var(--space-3); }
+.cost-table th, .cost-table td { padding: var(--space-2) var(--space-3); text-align: left; }
+.cost-table th { font-size: var(--text-xs); text-transform: uppercase; color: var(--color-text-muted); border-bottom: 1px solid var(--color-border); }
+.cost-total { font-weight: 700; border-top: 2px solid var(--color-border); }
+.text-right { text-align: right !important; }

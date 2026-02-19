@@ -1,0 +1,7 @@
+.run-detail { max-width: 900px; }
+.persona-tabs { display: flex; gap: var(--space-2); margin: var(--space-4) 0; }
+.detail-sections { display: flex; flex-direction: column; gap: var(--space-4); }
+.scores-row { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.preview-link { font-size: var(--text-sm); font-weight: 600; }
+.conversation-section h4 { margin-bottom: var(--space-3); }
+.conversation-scroll { display: flex; flex-direction: column; max-height: 600px; overflow-y: auto; }

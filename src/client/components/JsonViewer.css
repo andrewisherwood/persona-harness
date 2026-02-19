@@ -1,0 +1,12 @@
+.json-viewer-header { display: flex; justify-content: space-between; align-items: center; }
+.json-toggle { font-size: var(--text-sm); color: var(--color-text-muted); }
+.json-content {
+  overflow: auto;
+  max-height: 400px;
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}

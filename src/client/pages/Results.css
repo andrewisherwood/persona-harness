@@ -1,0 +1,16 @@
+.results-page { max-width: 800px; }
+.results-list { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-4); }
+.result-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-decoration: none;
+  color: var(--color-text);
+  transition: box-shadow 0.15s;
+}
+.result-card:hover { box-shadow: var(--shadow-md); text-decoration: none; }
+.result-info { display: flex; flex-direction: column; gap: var(--space-1); }
+.result-id { font-size: var(--text-sm); }
+.result-meta { font-size: var(--text-xs); color: var(--color-text-muted); }
+.empty-state { color: var(--color-text-muted); font-size: var(--text-sm); padding: var(--space-8) 0; text-align: center; }
+.loading { color: var(--color-text-muted); padding: var(--space-8); text-align: center; }
