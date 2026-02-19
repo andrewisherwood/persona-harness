@@ -1,0 +1,4 @@
+.settings-page { max-width: 600px; display: flex; flex-direction: column; gap: var(--space-6); }
+.settings-section { display: flex; flex-direction: column; gap: var(--space-4); }
+.setting-row { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-sm); }
+.setting-row input, .setting-row select { width: 280px; }
