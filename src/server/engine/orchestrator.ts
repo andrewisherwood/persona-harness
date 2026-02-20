@@ -2,11 +2,12 @@ import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync } from 
 import { join } from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import type { RunConfig, RunResult, PersonaRunResult, ProgressCallback } from "./types.js";
-import { EdgeFunctionClient, extractTextFromResponse, isConversationComplete } from "./edge-function-client.js";
+import { EdgeFunctionClient, extractTextFromResponse, extractToolCalls, isConversationComplete } from "./edge-function-client.js";
 import type { ChatMessage } from "./edge-function-client.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { SupabaseConfig } from "./supabase-client.js";
 import { createServiceClient, createTestSiteSpec, getSiteSpec, upsertSiteSpec, validateConfig } from "./supabase-client.js";
+import { SpecAccumulator } from "../../../lib/spec-accumulator.js";
 import type { Persona, Criterion } from "../../../personas/schema.js";
 
 const RUNS_DIR = join(process.cwd(), "runs");
@@ -114,13 +115,15 @@ export class Orchestrator {
       supabase, this.supabaseConfig.testTenantId, this.supabaseConfig.testUserId,
     );
 
-    // Run conversation
-    const conversation = await this.runConversation(config, persona, siteSpecId, costTracker, onProgress);
+    // Run conversation (also accumulates tool calls into site spec)
+    const { conversation, accumulatedSpec } = await this.runConversation(config, persona, siteSpecId, costTracker, onProgress);
     writeFileSync(join(personaDir, "conversation.json"), JSON.stringify(conversation, null, 2));
 
-    // Read final site_spec from Supabase
+    // Read final site_spec from Supabase (includes accumulated tool call data)
     const siteSpec = await getSiteSpec(supabase, siteSpecId);
     writeFileSync(join(personaDir, "site-spec.json"), JSON.stringify(siteSpec, null, 2));
+    // Also save the locally-accumulated spec for comparison/debugging
+    writeFileSync(join(personaDir, "accumulated-spec.json"), JSON.stringify(accumulatedSpec, null, 2));
 
     // Evaluate
     let evaluation: Record<string, unknown> | null = null;
@@ -136,10 +139,9 @@ export class Orchestrator {
     if (!config.skipBuild) {
       try {
         onProgress({ runId: config.id, persona: persona.id, step: "building" });
-        // TODO: Generate HTML/CSS files from site_spec before calling build.
-        // The /build endpoint requires files[] with generated content.
-        // For now, pass an empty files array as a placeholder.
-        const buildResult = await this.edgeClient.triggerBuild(siteSpecId, []);
+        const { generateSiteFiles } = await import("./site-generator.js");
+        const files = generateSiteFiles(siteSpec ?? accumulatedSpec);
+        const buildResult = await this.edgeClient.triggerBuild(siteSpecId, files);
         previewUrl = buildResult.preview_url;
 
         onProgress({ runId: config.id, persona: persona.id, step: "deploying" });
@@ -178,9 +180,9 @@ export class Orchestrator {
     await upsertSiteSpec(supabase, siteSpecId, savedSpec);
 
     onProgress({ runId: config.id, persona: personaId, step: "building" });
-    // TODO: Generate HTML/CSS files from saved spec before calling build.
-    // The /build endpoint requires files[] with generated content.
-    const buildResult = await this.edgeClient.triggerBuild(siteSpecId, []);
+    const { generateSiteFiles } = await import("./site-generator.js");
+    const files = generateSiteFiles(savedSpec);
+    const buildResult = await this.edgeClient.triggerBuild(siteSpecId, files);
     const previewUrl = buildResult.preview_url;
 
     onProgress({ runId: config.id, persona: personaId, step: "deploying" });
@@ -199,14 +201,15 @@ export class Orchestrator {
   private async runConversation(
     config: RunConfig,
     persona: Persona,
-    _siteSpecId: string,
+    siteSpecId: string,
     costTracker: CostTracker,
     onProgress: ProgressCallback,
-  ): Promise<Array<{ turn: number; role: string; content: string; timestamp: string }>> {
+  ): Promise<{ conversation: Array<{ turn: number; role: string; content: string; timestamp: string }>; accumulatedSpec: Record<string, unknown> }> {
     // Import persona system prompt builder from existing lib
     const { buildPersonaSystemPrompt } = await import("../../../lib/persona-agent.js");
     const personaSystemPrompt = buildPersonaSystemPrompt(persona);
 
+    const specAccumulator = new SpecAccumulator();
     const conversation: Array<{ turn: number; role: string; content: string; timestamp: string }> = [];
     // Messages array sent to the /chat edge function (full conversation history)
     const chatMessages: ChatMessage[] = [];
@@ -216,6 +219,11 @@ export class Orchestrator {
     chatMessages.push({ role: "user", content: "Hi" });
     const greetingResponse = await this.edgeClient.sendChatMessage(chatMessages);
     const greetingText = extractTextFromResponse(greetingResponse) || "[The chatbot is ready]";
+
+    // Extract and accumulate any tool calls from the greeting
+    for (const tc of extractToolCalls(greetingResponse)) {
+      specAccumulator.applyToolCall(tc.name, tc.input);
+    }
 
     turnNumber++;
     conversation.push({ turn: turnNumber, role: "user", content: "Hi", timestamp: new Date().toISOString() });
@@ -272,6 +280,11 @@ export class Orchestrator {
 
       const botText = extractTextFromResponse(chatResponse) || "[The chatbot saved your information]";
 
+      // Extract and accumulate tool calls from the chatbot response
+      for (const tc of extractToolCalls(chatResponse)) {
+        specAccumulator.applyToolCall(tc.name, tc.input);
+      }
+
       costTracker.recordEstimatedCall("chatbot_estimated", {
         messageCount: 1,
         estimatedTokens: chatResponse.usage
@@ -294,7 +307,12 @@ export class Orchestrator {
       complete = isConversationComplete(chatResponse);
     }
 
-    return conversation;
+    // Upsert the accumulated spec to Supabase so the DB has the data
+    const accumulatedSpec = specAccumulator.getSpec() as unknown as Record<string, unknown>;
+    const supabase = createServiceClient(this.supabaseConfig);
+    await upsertSiteSpec(supabase, siteSpecId, accumulatedSpec);
+
+    return { conversation, accumulatedSpec };
   }
 
   private async evaluate(
