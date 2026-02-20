@@ -90,11 +90,14 @@ export function aggregateCosts(
     if (!existsSync(summaryPath)) continue;
 
     let cost = 0;
+    let timestamp: string | undefined;
     try {
       const summary = JSON.parse(readFileSync(summaryPath, "utf-8")) as {
         totalCost?: number;
+        timestamp?: string;
       };
       cost = typeof summary.totalCost === "number" ? summary.totalCost : 0;
+      timestamp = summary.timestamp;
     } catch {
       continue;
     }
@@ -102,7 +105,8 @@ export function aggregateCosts(
     runCount++;
     total += cost;
 
-    const ts = parseRunTimestamp(dir);
+    // Try timestamp from summary first (UUID dirs), fall back to dir name (legacy timestamp dirs)
+    const ts = (timestamp ? parseRunTimestamp(timestamp) : null) ?? parseRunTimestamp(dir);
     if (ts) {
       if (isSameUTCDay(ts, now)) {
         today += cost;

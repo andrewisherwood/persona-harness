@@ -19,21 +19,24 @@ export function createRunsRouter(orchestrator: Orchestrator) {
       return;
     }
     const runs = readdirSync(RUNS_DIR)
-      .sort()
-      .reverse()
       .map((dir) => {
         const configPath = join(RUNS_DIR, dir, "config.json");
         const summaryPath = join(RUNS_DIR, dir, "summary.json");
+        const summary = existsSync(summaryPath)
+          ? JSON.parse(readFileSync(summaryPath, "utf-8"))
+          : null;
         return {
           id: dir,
           config: existsSync(configPath)
             ? JSON.parse(readFileSync(configPath, "utf-8"))
             : null,
-          summary: existsSync(summaryPath)
-            ? JSON.parse(readFileSync(summaryPath, "utf-8"))
-            : null,
+          summary,
+          // Sort key: use timestamp from summary, fall back to dir name
+          _ts: (summary as Record<string, unknown>)?.timestamp as string ?? dir,
         };
-      });
+      })
+      .sort((a, b) => b._ts.localeCompare(a._ts))
+      .map(({ _ts, ...rest }) => rest);
     res.json(runs);
   });
 
@@ -123,14 +126,22 @@ export function createRunsRouter(orchestrator: Orchestrator) {
       skipBuild: body.skipBuild ?? false,
     };
 
+    // Initialize SSE stream set BEFORE responding so that clients
+    // connecting to /stream can find the run.
+    activeStreams.set(config.id, new Set());
+
     res.json({ runId: config.id, status: "started" });
 
     const onProgress = (progress: RunProgress) => {
       const streams = activeStreams.get(config.id);
       if (streams) {
         const data = JSON.stringify(progress);
+        // Never use "error" as SSE event name for progress — it conflicts
+        // with the run-level error event. Map it to "complete" so the
+        // step indicator still works; the persona error is in the summary.
+        const eventName = progress.step === "error" ? "complete" : progress.step;
         for (const stream of streams) {
-          stream.write(`event: ${progress.step}\ndata: ${data}\n\n`);
+          stream.write(`event: ${eventName}\ndata: ${data}\n\n`);
         }
       }
     };

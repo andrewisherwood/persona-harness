@@ -97,7 +97,7 @@ Required for dashboard runs (in `.env`):
 - `SUPABASE_URL` — Supabase project URL
 - `SUPABASE_ANON_KEY` — Supabase anon key
 - `SUPABASE_SERVICE_ROLE_KEY` — Service role key (for site_spec CRUD)
-- `AUTH_TOKEN` — User JWT token (for edge function auth — no Bearer prefix)
+- `AUTH_TOKEN` — User JWT token (for edge function auth — Bearer prefix added automatically)
 - `TEST_TENANT_ID` — Test tenant UUID
 - `TEST_USER_ID` — Test user UUID
 - `API_PORT` — Express server port (default: 3001)
@@ -106,7 +106,7 @@ Required for dashboard runs (in `.env`):
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/health` | Server health check |
+| GET | `/api/health` | Server health + env var status |
 | GET | `/api/personas` | List all personas |
 | GET | `/api/personas/:id` | Get persona details |
 | GET | `/api/prompts` | List available prompts |
@@ -148,15 +148,16 @@ Required for dashboard runs (in `.env`):
 See `docs/edge-function-contracts.md` for full details. Key points:
 - `/chat` takes `{ messages }` (full history), returns raw Claude API format with `content[]` blocks
 - Completion detected via `mark_step_complete` tool call with `next_step === "complete"`
-- Auth uses bare JWT token (no Bearer prefix) in `Authorization` header
+- Auth uses `Bearer <JWT>` in `Authorization` header (EdgeFunctionClient adds prefix automatically)
 - `/build` requires pre-generated `files[]` — generation functions not yet integrated
 
 ### Dashboard Architecture
 
 - Express `createApp()` factory enables testing without side effects
 - `dotenv.config()` only runs in production (not during tests)
-- SSE streams tracked per-run via `activeStreams` Map
+- SSE streams tracked per-run via `activeStreams` Map (initialized on POST, cleaned up on done/error)
 - Late-joining SSE clients get immediate `done` or `error` if run already completed
+- Progress `step: "error"` is remapped to avoid conflicting with SSE error events
 - Vite proxies `/api` to Express in dev mode
 
 ### Three LLM Roles
@@ -179,11 +180,18 @@ See `docs/edge-function-contracts.md` for full details. Key points:
 - Persona agent NEVER sees the chatbot's system prompt or tool calls
 - Max 60 conversation turns per simulation (configurable in dashboard)
 - Judge uses a single `submit_evaluation` tool for structured output
-- Runs stored as timestamped directories under `runs/`
+- Runs stored as UUID-named directories under `runs/` (timestamp in summary.json)
 - CLI and dashboard share persona definitions and evaluation criteria
 - Dashboard runs require real Supabase credentials; CLI runs are self-contained
 
+## Important Notes
+
+- **tsx watch does NOT reload `.env` changes** — must restart `npm run dev` manually after editing `.env`
+- **AUTH_TOKEN JWTs expire** — magic link JWTs have limited lifetime; refresh from Supabase dashboard (Authentication → Users or browser Local Storage `sb-*-auth-token` → `access_token`)
+- **Kill stale servers** — `lsof -i :3001` to find, `kill <PID>` to remove; stale processes serve old code
+- Build failures are non-fatal — conversation, site_spec, evaluation, and cost data are preserved
+
 ## Known Limitations
 
-- Build pipeline TODO: `/build` endpoint requires pre-generated HTML/CSS files, but generation edge functions (`/generate-design-system`, `/generate-page`) are not yet integrated into the orchestrator
-- Pre-existing CLI runs lack `totalCost` field — cost aggregation shows $0 for them
+- Build pipeline TODO: `/build` endpoint requires pre-generated HTML/CSS files, but generation edge functions (`/generate-design-system`, `/generate-page`) are not yet integrated into the orchestrator. Use "Skip build" in advanced settings to avoid the error.
+- Pre-existing CLI runs use timestamp-named directories; new dashboard runs use UUID directories. Both formats are supported by the cost aggregator and run listing.

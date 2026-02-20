@@ -98,8 +98,9 @@ export class EdgeFunctionClient {
   }
 
   private headers(): Record<string, string> {
+    const auth = this.authToken.startsWith("Bearer ") ? this.authToken : `Bearer ${this.authToken}`;
     return {
-      "Authorization": this.authToken,
+      "Authorization": auth,
       "Content-Type": "application/json",
     };
   }

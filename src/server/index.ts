@@ -8,7 +8,9 @@ import { createRunsRouter } from "./routes/runs.js";
 import { configRouter } from "./routes/config.js";
 import { costRouter } from "./routes/cost.js";
 import { Orchestrator } from "./engine/orchestrator.js";
-import { buildSupabaseConfig } from "./engine/supabase-client.js";
+import { buildSupabaseConfig, validateConfig } from "./engine/supabase-client.js";
+
+const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "AUTH_TOKEN", "TEST_TENANT_ID", "TEST_USER_ID"];
 
 /**
  * Creates and configures the Express application without starting a listener.
@@ -20,7 +22,16 @@ export function createApp(): Express {
   app.use(express.json());
 
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    const envStatus: Record<string, boolean> = {};
+    for (const k of REQUIRED_ENV_VARS) {
+      envStatus[k] = !!process.env[k];
+    }
+    const allSet = Object.values(envStatus).every(Boolean);
+    res.json({
+      status: allSet ? "ok" : "misconfigured",
+      timestamp: new Date().toISOString(),
+      env: envStatus,
+    });
   });
 
   const supabaseConfig = buildSupabaseConfig(process.env as Record<string, string>);
@@ -39,9 +50,22 @@ export function createApp(): Express {
 // Vitest sets process.env.VITEST automatically.
 if (!process.env.VITEST) {
   dotenv.config();
+
+  const missing = REQUIRED_ENV_VARS.filter((k) => !process.env[k]);
+  if (missing.length > 0) {
+    console.error(`\n❌ Missing env vars: ${missing.join(", ")}`);
+    console.error("   Runs will fail. Add them to .env and restart.\n");
+    console.error("   Note: tsx watch does NOT reload .env changes — you must restart manually.\n");
+  }
+
   const app = createApp();
   const PORT = process.env.API_PORT || 3001;
   app.listen(PORT, () => {
-    console.log(`API server running on http://localhost:${PORT}`);
+    console.log(`\nAPI server running on http://localhost:${PORT}`);
+    console.log(`Check config: http://localhost:${PORT}/api/health\n`);
+    for (const k of REQUIRED_ENV_VARS) {
+      console.log(`  ${process.env[k] ? "✓" : "✗"} ${k}`);
+    }
+    console.log();
   });
 }

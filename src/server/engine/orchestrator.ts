@@ -6,7 +6,7 @@ import { EdgeFunctionClient, extractTextFromResponse, isConversationComplete } f
 import type { ChatMessage } from "./edge-function-client.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { SupabaseConfig } from "./supabase-client.js";
-import { createServiceClient, createTestSiteSpec, getSiteSpec, upsertSiteSpec } from "./supabase-client.js";
+import { createServiceClient, createTestSiteSpec, getSiteSpec, upsertSiteSpec, validateConfig } from "./supabase-client.js";
 import type { Persona, Criterion } from "../../../personas/schema.js";
 
 const RUNS_DIR = join(process.cwd(), "runs");
@@ -27,8 +27,21 @@ export class Orchestrator {
   }
 
   async executeRun(config: RunConfig, onProgress: ProgressCallback): Promise<RunResult> {
+    // Fail fast with a clear message if Supabase is not configured
+    if (!this.supabaseConfig.supabaseUrl) {
+      throw new Error(
+        "SUPABASE_URL is not set. Add it to your .env file and restart the server (tsx watch does not reload .env changes).",
+      );
+    }
+    if (!this.supabaseConfig.authToken) {
+      throw new Error(
+        "AUTH_TOKEN is not set. Add your Supabase user JWT to .env and restart the server.",
+      );
+    }
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const runDir = join(RUNS_DIR, timestamp);
+    // Use the run UUID as directory name so the client can look it up by ID
+    const runDir = join(RUNS_DIR, config.id);
     mkdirSync(runDir, { recursive: true });
 
     const result: RunResult = {
@@ -93,6 +106,7 @@ export class Orchestrator {
     onProgress: ProgressCallback,
   ): Promise<PersonaRunResult> {
     onProgress({ runId: config.id, persona: persona.id, step: "chatting" });
+    validateConfig(this.supabaseConfig);
 
     // Create test site_spec in Supabase
     const supabase = createServiceClient(this.supabaseConfig);
@@ -116,22 +130,27 @@ export class Orchestrator {
       writeFileSync(join(personaDir, "evaluation.json"), JSON.stringify(evaluation, null, 2));
     }
 
-    // Build + deploy
+    // Build + deploy — failures here should not lose conversation/evaluation data
     let previewUrl: string | null = null;
+    let buildError: string | null = null;
     if (!config.skipBuild) {
-      onProgress({ runId: config.id, persona: persona.id, step: "building" });
-      // TODO: Generate HTML/CSS files from site_spec before calling build.
-      // The /build endpoint requires files[] with generated content.
-      // For now, pass an empty files array as a placeholder.
-      const buildResult = await this.edgeClient.triggerBuild(siteSpecId, []);
-      previewUrl = buildResult.preview_url;
+      try {
+        onProgress({ runId: config.id, persona: persona.id, step: "building" });
+        // TODO: Generate HTML/CSS files from site_spec before calling build.
+        // The /build endpoint requires files[] with generated content.
+        // For now, pass an empty files array as a placeholder.
+        const buildResult = await this.edgeClient.triggerBuild(siteSpecId, []);
+        previewUrl = buildResult.preview_url;
 
-      onProgress({ runId: config.id, persona: persona.id, step: "deploying" });
-      const publishResult = await this.edgeClient.triggerPublish(siteSpecId, "publish");
-      if (publishResult.deploy_url) {
-        previewUrl = publishResult.deploy_url;
+        onProgress({ runId: config.id, persona: persona.id, step: "deploying" });
+        const publishResult = await this.edgeClient.triggerPublish(siteSpecId, "publish");
+        if (publishResult.deploy_url) {
+          previewUrl = publishResult.deploy_url;
+        }
+        writeFileSync(join(personaDir, "preview-url.txt"), previewUrl);
+      } catch (err) {
+        buildError = err instanceof Error ? err.message : String(err);
       }
-      writeFileSync(join(personaDir, "preview-url.txt"), previewUrl);
     }
 
     const cost = costTracker.getSummary();
@@ -139,7 +158,7 @@ export class Orchestrator {
 
     onProgress({ runId: config.id, persona: persona.id, step: "complete" });
 
-    return { personaId: persona.id, conversation, siteSpec, evaluation, cost, previewUrl, error: null };
+    return { personaId: persona.id, conversation, siteSpec, evaluation, cost, previewUrl, error: buildError };
   }
 
   private async executeBuildOnly(
@@ -323,9 +342,21 @@ export class Orchestrator {
 
   findLatestSavedSpec(personaId: string): Record<string, unknown> | null {
     if (!existsSync(RUNS_DIR)) return null;
-    const runs = readdirSync(RUNS_DIR).sort().reverse();
+    // Run dirs are now UUIDs; sort by summary timestamp to find latest
+    const runs = readdirSync(RUNS_DIR)
+      .map((dir) => {
+        const summaryPath = join(RUNS_DIR, dir, "summary.json");
+        if (!existsSync(summaryPath)) return null;
+        try {
+          const summary = JSON.parse(readFileSync(summaryPath, "utf-8")) as { timestamp?: string };
+          return { dir, timestamp: summary.timestamp ?? "" };
+        } catch { return null; }
+      })
+      .filter((r): r is { dir: string; timestamp: string } => r !== null)
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
     for (const run of runs) {
-      const specPath = join(RUNS_DIR, run, personaId, "site-spec.json");
+      const specPath = join(RUNS_DIR, run.dir, personaId, "site-spec.json");
       if (existsSync(specPath)) {
         return JSON.parse(readFileSync(specPath, "utf-8")) as Record<string, unknown>;
       }
