@@ -78,6 +78,25 @@ interface NormalizedSpec {
 }
 
 // ---------------------------------------------------------------------------
+// Stock images for test sites (from Supabase storage, Dina Hart's uploads)
+// ---------------------------------------------------------------------------
+
+const STORAGE_BASE = "https://btkruvwxhyqotofpfbps.supabase.co/storage/v1/render/image/public/photos/photos/23099152-2ebe-4040-9a45-9a2d0a8fb1c6";
+
+const STOCK_IMAGES = {
+  hero: `${STORAGE_BASE}/hero-1771509993326.png?width=1200&quality=80`,
+  headshot: `${STORAGE_BASE}/headshot-1771509974468.png?width=600&quality=80`,
+  gallery: [
+    `${STORAGE_BASE}/gallery-1771510012988.png?width=800&quality=80`,
+    `${STORAGE_BASE}/gallery-1771510047167.png?width=800&quality=80`,
+    `${STORAGE_BASE}/gallery-1771510066354.png?width=800&quality=80`,
+    `${STORAGE_BASE}/gallery-1771510090086.png?width=800&quality=80`,
+    `${STORAGE_BASE}/gallery-1771510112557.png?width=800&quality=80`,
+    `${STORAGE_BASE}/gallery-1771510146957.png?width=800&quality=80`,
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // Palettes
 // ---------------------------------------------------------------------------
 
@@ -242,6 +261,14 @@ function generateCss(colours: CustomColours, headingFont: string, bodyFont: stri
     .hero--text-only h1 { font-size: 2.5rem; margin-bottom: 1rem; }
     .hero--text-only .tagline { font-size: 1.2rem; opacity: 0.85; margin-bottom: 2rem; max-width: 600px; margin-left: auto; margin-right: auto; }
     @media (min-width: 769px) { .hero--text-only h1 { font-size: 3.5rem; } }
+    .hero--image { position: relative; min-height: 70vh; display: flex; align-items: center; justify-content: center; text-align: center; background-size: cover; background-position: center; }
+    .hero--image::before { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
+    .hero--image .hero-inner { position: relative; z-index: 1; max-width: var(--max-width); margin: 0 auto; padding: 2rem 1.5rem; }
+    .hero--image h1 { font-size: 2.5rem; margin-bottom: 1rem; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    .hero--image .tagline { font-size: 1.2rem; color: rgba(255,255,255,0.95); margin-bottom: 2rem; max-width: 600px; margin-left: auto; margin-right: auto; }
+    @media (min-width: 769px) { .hero--image h1 { font-size: 3.5rem; } }
+    .headshot { border-radius: var(--radius); max-width: 300px; width: 100%; }
+    .service-img { width: 100%; height: 200px; object-fit: cover; border-radius: var(--radius) var(--radius) 0 0; margin: -2rem -2rem 1.5rem; width: calc(100% + 4rem); max-width: calc(100% + 4rem); }
     .btn { display: inline-block; padding: 0.75rem 2rem; background: var(--colour-cta); color: #fff; text-decoration: none; border-radius: var(--btn-radius); font-weight: 600; border: none; cursor: pointer; transition: opacity 0.2s; }
     .btn:hover { opacity: 0.9; }
     .btn--outline { background: transparent; color: var(--colour-cta); border: 2px solid var(--colour-cta); }
@@ -416,7 +443,7 @@ function generateHomePage(spec: NormalizedSpec, css: string, googleFontsUrl: str
     ? `${esc(spec.business_name)} &mdash; ${esc(spec.primary_keyword)} in ${esc(spec.service_area)}`
     : esc(spec.business_name);
 
-  const heroHtml = `<section class="hero hero--text-only">
+  const heroHtml = `<section class="hero hero--image" style="background-image: url('${STOCK_IMAGES.hero}');">
     <div class="hero-inner">
       <h1>${entityH1}</h1>
       ${spec.tagline ? `<p class="tagline">${esc(spec.tagline)}</p>` : ""}
@@ -427,7 +454,8 @@ function generateHomePage(spec: NormalizedSpec, css: string, googleFontsUrl: str
   let servicesHtml = "";
   if (spec.services.length > 0) {
     const cards = spec.services.slice(0, 3)
-      .map((svc) => `<div class="card">
+      .map((svc, i) => `<div class="card">
+          <img src="${STOCK_IMAGES.gallery[i % STOCK_IMAGES.gallery.length]}" alt="${esc(svc.title)}" class="service-img" />
           <h3>${esc(svc.title)}</h3>
           <p>${esc(svc.description)}</p>
           <span class="price">${esc(svc.price)}</span>
@@ -531,7 +559,10 @@ function generateAboutPage(spec: NormalizedSpec, css: string, googleFontsUrl: st
   return wrapPage(head, nav, `<section class="section">
       <div class="section-inner">
         <h1 class="section-title">About ${esc(doulaName)}</h1>
-        <div>${bioHtml}${qualHtml}</div>
+        <div class="about-grid">
+          <div>${bioHtml}${qualHtml}</div>
+          <div><img src="${STOCK_IMAGES.headshot}" alt="${esc(doulaName)}" class="headshot" /></div>
+        </div>
       </div>
     </section>
     ${philosophyHtml}
@@ -544,7 +575,8 @@ function generateServicesPage(spec: NormalizedSpec, css: string, googleFontsUrl:
   const hasContact = spec.pages.includes("contact");
 
   const cards = spec.services
-    .map((svc) => `<div class="card">
+    .map((svc, i) => `<div class="card">
+        <img src="${STOCK_IMAGES.gallery[i % STOCK_IMAGES.gallery.length]}" alt="${esc(svc.title)}" class="service-img" />
         <h2>${esc(svc.title)}</h2>
         <p>${esc(svc.description)}</p>
         <span class="price">${esc(svc.price)}</span>
