@@ -15,7 +15,46 @@ export function validateConfig(config: SupabaseConfig): void {
   if (!config.serviceRoleKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
   if (!config.testTenantId) throw new Error("TEST_TENANT_ID is required");
   if (!config.testUserId) throw new Error("TEST_USER_ID is required");
-  if (!config.authToken) throw new Error("AUTH_TOKEN is required");
+}
+
+/**
+ * Programmatically generates a fresh auth token for the test user.
+ * Uses service role key to create a magic link, then exchanges the
+ * hashed_token for a session via verifyOtp — no password needed.
+ */
+export async function generateAuthToken(config: SupabaseConfig): Promise<string> {
+  const serviceClient = createClient(config.supabaseUrl, config.serviceRoleKey);
+
+  // Look up test user email from TEST_USER_ID
+  const { data: userData, error: userError } = await serviceClient.auth.admin.getUserById(config.testUserId);
+  if (userError || !userData?.user?.email) {
+    throw new Error(`Failed to look up test user ${config.testUserId}: ${userError?.message ?? "no email found"}`);
+  }
+
+  // Generate a magic link (server-side only, no email sent)
+  const { data: linkData, error: linkError } = await serviceClient.auth.admin.generateLink({
+    type: "magiclink",
+    email: userData.user.email,
+  });
+  if (linkError) {
+    throw new Error(`Failed to generate magic link: ${linkError.message}`);
+  }
+  const hashedToken = linkData?.properties?.hashed_token;
+  if (!hashedToken) {
+    throw new Error("generateLink returned no hashed_token");
+  }
+
+  // Exchange hashed_token for a session via anon client
+  const anonClient = createClient(config.supabaseUrl, config.anonKey);
+  const { data: sessionData, error: sessionError } = await anonClient.auth.verifyOtp({
+    token_hash: hashedToken,
+    type: "magiclink",
+  });
+  if (sessionError || !sessionData?.session?.access_token) {
+    throw new Error(`Failed to verify OTP: ${sessionError?.message ?? "no session returned"}`);
+  }
+
+  return sessionData.session.access_token;
 }
 
 export function buildSupabaseConfig(env: Record<string, string | undefined>): SupabaseConfig {

@@ -8,9 +8,9 @@ import { createRunsRouter } from "./routes/runs.js";
 import { configRouter } from "./routes/config.js";
 import { costRouter } from "./routes/cost.js";
 import { Orchestrator } from "./engine/orchestrator.js";
-import { buildSupabaseConfig, validateConfig } from "./engine/supabase-client.js";
+import { buildSupabaseConfig, generateAuthToken, validateConfig } from "./engine/supabase-client.js";
 
-const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "AUTH_TOKEN", "TEST_TENANT_ID", "TEST_USER_ID"];
+const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "TEST_TENANT_ID", "TEST_USER_ID"];
 
 /**
  * Creates and configures the Express application without starting a listener.
@@ -58,14 +58,31 @@ if (!process.env.VITEST) {
     console.error("   Note: tsx watch does NOT reload .env changes — you must restart manually.\n");
   }
 
-  const app = createApp();
-  const PORT = process.env.API_PORT || 3001;
-  app.listen(PORT, () => {
-    console.log(`\nAPI server running on http://localhost:${PORT}`);
-    console.log(`Check config: http://localhost:${PORT}/api/health\n`);
-    for (const k of REQUIRED_ENV_VARS) {
-      console.log(`  ${process.env[k] ? "✓" : "✗"} ${k}`);
+  // Generate an initial auth token if not provided in .env
+  const startServer = async () => {
+    if (!process.env.AUTH_TOKEN && missing.length === 0) {
+      try {
+        const config = buildSupabaseConfig(process.env as Record<string, string>);
+        const token = await generateAuthToken(config);
+        process.env.AUTH_TOKEN = token;
+        console.log("  ✓ AUTH_TOKEN auto-generated from test user");
+      } catch (err) {
+        console.error(`  ✗ Failed to auto-generate AUTH_TOKEN: ${err instanceof Error ? err.message : err}`);
+        console.error("    You can still set AUTH_TOKEN manually in .env\n");
+      }
     }
-    console.log();
-  });
+
+    const app = createApp();
+    const PORT = process.env.API_PORT || 3001;
+    app.listen(PORT, () => {
+      console.log(`\nAPI server running on http://localhost:${PORT}`);
+      console.log(`Check config: http://localhost:${PORT}/api/health\n`);
+      for (const k of [...REQUIRED_ENV_VARS, "AUTH_TOKEN"]) {
+        console.log(`  ${process.env[k] ? "✓" : "✗"} ${k}${k === "AUTH_TOKEN" ? " (auto-generated per run)" : ""}`);
+      }
+      console.log();
+    });
+  };
+
+  startServer();
 }

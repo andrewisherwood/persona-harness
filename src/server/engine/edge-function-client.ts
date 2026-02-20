@@ -87,7 +87,7 @@ export class EdgeFunctionClient {
   readonly chatUrl: string;
   readonly buildUrl: string;
   readonly publishUrl: string;
-  private readonly authToken: string;
+  private authToken: string;
 
   constructor(config: EdgeFunctionConfig) {
     const base = config.supabaseUrl.replace(/\/$/, "");
@@ -95,6 +95,10 @@ export class EdgeFunctionClient {
     this.buildUrl = `${base}/functions/v1/build`;
     this.publishUrl = `${base}/functions/v1/publish`;
     this.authToken = config.authToken;
+  }
+
+  updateAuthToken(token: string): void {
+    this.authToken = token;
   }
 
   private headers(): Record<string, string> {

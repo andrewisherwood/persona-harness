@@ -33,10 +33,10 @@ describe("supabase-client", () => {
       ).toThrow("TEST_USER_ID is required");
     });
 
-    it("throws when authToken is missing", () => {
+    it("does not require authToken (auto-generated at runtime)", () => {
       expect(() =>
         validateConfig({ supabaseUrl: "https://x.supabase.co", anonKey: "k", serviceRoleKey: "k", testTenantId: "t", testUserId: "u", authToken: "" })
-      ).toThrow("AUTH_TOKEN is required");
+      ).not.toThrow();
     });
 
     it("does not throw for a valid config", () => {

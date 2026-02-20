@@ -6,7 +6,7 @@ import { EdgeFunctionClient, extractTextFromResponse, extractToolCalls, isConver
 import type { ChatMessage } from "./edge-function-client.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { SupabaseConfig } from "./supabase-client.js";
-import { createServiceClient, createTestSiteSpec, getSiteSpec, upsertSiteSpec, validateConfig } from "./supabase-client.js";
+import { createServiceClient, createTestSiteSpec, generateAuthToken, getSiteSpec, upsertSiteSpec, validateConfig } from "./supabase-client.js";
 import { SpecAccumulator } from "../../../lib/spec-accumulator.js";
 import type { Persona, Criterion } from "../../../personas/schema.js";
 
@@ -34,11 +34,11 @@ export class Orchestrator {
         "SUPABASE_URL is not set. Add it to your .env file and restart the server (tsx watch does not reload .env changes).",
       );
     }
-    if (!this.supabaseConfig.authToken) {
-      throw new Error(
-        "AUTH_TOKEN is not set. Add your Supabase user JWT to .env and restart the server.",
-      );
-    }
+
+    // Auto-generate a fresh auth token before each run
+    const freshToken = await generateAuthToken(this.supabaseConfig);
+    this.supabaseConfig.authToken = freshToken;
+    this.edgeClient.updateAuthToken(freshToken);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     // Use the run UUID as directory name so the client can look it up by ID
