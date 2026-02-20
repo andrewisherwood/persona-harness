@@ -3,7 +3,7 @@ import { join } from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import type { RunConfig, RunResult, PersonaRunResult, ProgressCallback } from "./types.js";
 import { EdgeFunctionClient, extractTextFromResponse, extractToolCalls, isConversationComplete } from "./edge-function-client.js";
-import type { ChatMessage } from "./edge-function-client.js";
+import type { ChatMessage, DesignSystem, PhotoInput, BuildFile } from "./edge-function-client.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { SupabaseConfig } from "./supabase-client.js";
 import { createServiceClient, createTestSiteSpec, generateAuthToken, getSiteSpec, upsertSiteSpec, validateConfig } from "./supabase-client.js";
@@ -12,6 +12,18 @@ import type { Persona, Criterion } from "../../../personas/schema.js";
 
 const RUNS_DIR = join(process.cwd(), "runs");
 const PERSONAS_DIR = join(process.cwd(), "personas/birthbuild");
+
+const STORAGE_BASE = "https://btkruvwxhyqotofpfbps.supabase.co/storage/v1/render/image/public/photos/photos/23099152-2ebe-4040-9a45-9a2d0a8fb1c6";
+const STOCK_PHOTOS: PhotoInput[] = [
+  { purpose: "hero", publicUrl: `${STORAGE_BASE}/hero-1771509993326.png?width=1200&quality=80`, altText: "Doula supporting a family during birth" },
+  { purpose: "headshot", publicUrl: `${STORAGE_BASE}/headshot-1771509974468.png?width=600&quality=80`, altText: "Portrait of the doula" },
+  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510012988.png?width=800&quality=80`, altText: "Prenatal consultation" },
+  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510047167.png?width=800&quality=80`, altText: "Birth support" },
+  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510066354.png?width=800&quality=80`, altText: "Postnatal care" },
+  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510090086.png?width=800&quality=80`, altText: "Family bonding" },
+  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510112557.png?width=800&quality=80`, altText: "Birth preparation" },
+  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510146957.png?width=800&quality=80`, altText: "Supporting families" },
+];
 
 export class Orchestrator {
   private edgeClient: EdgeFunctionClient;
@@ -133,23 +145,19 @@ export class Orchestrator {
       writeFileSync(join(personaDir, "evaluation.json"), JSON.stringify(evaluation, null, 2));
     }
 
-    // Build + deploy — failures here should not lose conversation/evaluation data
+    // AI generation + deploy — failures here should not lose conversation/evaluation data
     let previewUrl: string | null = null;
     let buildError: string | null = null;
     if (!config.skipBuild) {
       try {
-        onProgress({ runId: config.id, persona: persona.id, step: "building" });
-        const { generateSiteFiles } = await import("./site-generator.js");
-        const files = generateSiteFiles(siteSpec ?? accumulatedSpec);
-        const buildResult = await this.edgeClient.triggerBuild(siteSpecId, files);
-        previewUrl = buildResult.preview_url;
+        // Enable AI generation on the spec
+        await upsertSiteSpec(supabase, siteSpecId, { use_llm_generation: true });
 
-        onProgress({ runId: config.id, persona: persona.id, step: "deploying" });
-        const publishResult = await this.edgeClient.triggerPublish(siteSpecId, "publish");
-        if (publishResult.deploy_url) {
-          previewUrl = publishResult.deploy_url;
-        }
-        writeFileSync(join(personaDir, "preview-url.txt"), previewUrl);
+        const { files, previewUrl: url } = await this.generateAndDeploy(
+          config, persona.id, siteSpecId, personaDir, onProgress,
+        );
+        previewUrl = url;
+        writeFileSync(join(personaDir, "generated-files.json"), JSON.stringify(files.map((f) => f.path), null, 2));
       } catch (err) {
         buildError = err instanceof Error ? err.message : String(err);
       }
@@ -177,25 +185,67 @@ export class Orchestrator {
     const siteSpecId = await createTestSiteSpec(
       supabase, this.supabaseConfig.testTenantId, this.supabaseConfig.testUserId,
     );
-    await upsertSiteSpec(supabase, siteSpecId, savedSpec);
+    await upsertSiteSpec(supabase, siteSpecId, { ...savedSpec, use_llm_generation: true });
 
-    onProgress({ runId: config.id, persona: personaId, step: "building" });
-    const { generateSiteFiles } = await import("./site-generator.js");
-    const files = generateSiteFiles(savedSpec);
-    const buildResult = await this.edgeClient.triggerBuild(siteSpecId, files);
-    const previewUrl = buildResult.preview_url;
-
-    onProgress({ runId: config.id, persona: personaId, step: "deploying" });
-    const publishResult = await this.edgeClient.triggerPublish(siteSpecId, "publish");
-    const deployUrl = publishResult.deploy_url ?? previewUrl;
-    writeFileSync(join(personaDir, "preview-url.txt"), deployUrl);
+    const { previewUrl } = await this.generateAndDeploy(
+      config, personaId, siteSpecId, personaDir, onProgress,
+    );
 
     const cost = costTracker.getSummary();
     writeFileSync(join(personaDir, "cost.json"), JSON.stringify(cost, null, 2));
 
     onProgress({ runId: config.id, persona: personaId, step: "complete" });
 
-    return { personaId, conversation: [], siteSpec: savedSpec, evaluation: null, cost, previewUrl: deployUrl, error: null };
+    return { personaId, conversation: [], siteSpec: savedSpec, evaluation: null, cost, previewUrl, error: null };
+  }
+
+  /**
+   * AI generation + deploy pipeline:
+   * 1. Call /generate-design-system → CSS, nav, footer, wordmark
+   * 2. Call /generate-page for each page in parallel → HTML files
+   * 3. Call /build with all files → Netlify preview URL
+   */
+  private async generateAndDeploy(
+    config: RunConfig,
+    personaId: string,
+    siteSpecId: string,
+    personaDir: string,
+    onProgress: ProgressCallback,
+  ): Promise<{ files: BuildFile[]; previewUrl: string }> {
+    // Step 1: Generate design system
+    onProgress({ runId: config.id, persona: personaId, step: "building" });
+    const dsResponse = await this.edgeClient.generateDesignSystem(siteSpecId);
+    const designSystem: DesignSystem = {
+      css: dsResponse.css,
+      nav_html: dsResponse.nav_html,
+      footer_html: dsResponse.footer_html,
+      wordmark_svg: dsResponse.wordmark_svg ?? "",
+    };
+    writeFileSync(join(personaDir, "design-system.json"), JSON.stringify(designSystem, null, 2));
+
+    // Step 2: Generate pages in parallel
+    // Read the spec to get the pages list
+    const supabase = createServiceClient(this.supabaseConfig);
+    const specData = await getSiteSpec(supabase, siteSpecId);
+    const pages = Array.isArray(specData.pages) ? specData.pages as string[] : ["home", "about", "services", "contact"];
+
+    const pageResults = await Promise.all(
+      pages.map((page) =>
+        this.edgeClient.generatePage(siteSpecId, page, designSystem, STOCK_PHOTOS),
+      ),
+    );
+
+    const files: BuildFile[] = pageResults.map((r) => ({
+      path: r.filename,
+      content: r.html,
+    }));
+
+    // Step 3: Deploy
+    onProgress({ runId: config.id, persona: personaId, step: "deploying" });
+    const buildResult = await this.edgeClient.triggerBuild(siteSpecId, files);
+    writeFileSync(join(personaDir, "preview-url.txt"), buildResult.preview_url);
+
+    return { files, previewUrl: buildResult.preview_url };
   }
 
   private async runConversation(

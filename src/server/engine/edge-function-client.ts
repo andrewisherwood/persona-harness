@@ -38,6 +38,33 @@ export interface PublishResponse {
   deploy_url?: string;
 }
 
+export interface DesignSystemResponse {
+  success: boolean;
+  css: string;
+  nav_html: string;
+  footer_html: string;
+  wordmark_svg?: string;
+}
+
+export interface DesignSystem {
+  css: string;
+  nav_html: string;
+  footer_html: string;
+  wordmark_svg: string;
+}
+
+export interface PhotoInput {
+  purpose: string;
+  publicUrl: string;
+  altText: string;
+}
+
+export interface GeneratePageResponse {
+  success: boolean;
+  filename: string;
+  html: string;
+}
+
 export function buildChatRequest(messages: ChatMessage[]): { messages: ChatMessage[] } {
   return { messages };
 }
@@ -87,6 +114,8 @@ export class EdgeFunctionClient {
   readonly chatUrl: string;
   readonly buildUrl: string;
   readonly publishUrl: string;
+  readonly generateDesignSystemUrl: string;
+  readonly generatePageUrl: string;
   private authToken: string;
 
   constructor(config: EdgeFunctionConfig) {
@@ -94,6 +123,8 @@ export class EdgeFunctionClient {
     this.chatUrl = `${base}/functions/v1/chat`;
     this.buildUrl = `${base}/functions/v1/build`;
     this.publishUrl = `${base}/functions/v1/publish`;
+    this.generateDesignSystemUrl = `${base}/functions/v1/generate-design-system`;
+    this.generatePageUrl = `${base}/functions/v1/generate-page`;
     this.authToken = config.authToken;
   }
 
@@ -149,5 +180,41 @@ export class EdgeFunctionClient {
       throw new Error(`Publish endpoint error ${response.status}: ${text}`);
     }
     return response.json() as Promise<PublishResponse>;
+  }
+
+  async generateDesignSystem(siteSpecId: string): Promise<DesignSystemResponse> {
+    const response = await fetch(this.generateDesignSystemUrl, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ site_spec_id: siteSpecId }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`generate-design-system error ${response.status}: ${text}`);
+    }
+    return response.json() as Promise<DesignSystemResponse>;
+  }
+
+  async generatePage(
+    siteSpecId: string,
+    page: string,
+    designSystem: DesignSystem,
+    photos: PhotoInput[],
+  ): Promise<GeneratePageResponse> {
+    const response = await fetch(this.generatePageUrl, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        site_spec_id: siteSpecId,
+        page,
+        design_system: designSystem,
+        photos,
+      }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`generate-page (${page}) error ${response.status}: ${text}`);
+    }
+    return response.json() as Promise<GeneratePageResponse>;
   }
 }
