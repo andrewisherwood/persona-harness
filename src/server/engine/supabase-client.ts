@@ -108,8 +108,11 @@ export async function upsertSiteSpec(
   siteSpecId: string,
   spec: Record<string, unknown>,
 ): Promise<void> {
+  // Use update (not upsert) — the row already exists from createTestSiteSpec.
+  // Upsert treats missing columns as null, which violates NOT NULL on user_id/tenant_id.
   const { error } = await client
     .from("site_specs")
-    .upsert({ id: siteSpecId, ...spec });
+    .update(spec)
+    .eq("id", siteSpecId);
   if (error) throw new Error(`Failed to upsert site_spec: ${error.message}`);
 }
