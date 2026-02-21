@@ -208,7 +208,9 @@ export class Orchestrator {
     const siteSpecId = await createTestSiteSpec(
       supabase, this.supabaseConfig.testTenantId, this.supabaseConfig.testUserId,
     );
-    await upsertSiteSpec(supabase, siteSpecId, { ...savedSpec, use_llm_generation: true });
+    // Strip immutable DB fields before updating the new row
+    const { id: _id, user_id: _uid, tenant_id: _tid, created_at: _ca, ...specData } = savedSpec;
+    await upsertSiteSpec(supabase, siteSpecId, { ...specData, use_llm_generation: true });
 
     const { previewUrl } = await this.generateAndDeploy(
       config, personaId, siteSpecId, personaDir, onProgress,
@@ -250,7 +252,7 @@ export class Orchestrator {
     // Read the spec to get the pages list
     const supabase = createServiceClient(this.supabaseConfig);
     const specData = await getSiteSpec(supabase, siteSpecId);
-    const pages = Array.isArray(specData.pages) ? specData.pages as string[] : ["home", "about", "services", "contact"];
+    const pages = Array.isArray(specData.pages) && specData.pages.length > 0 ? specData.pages as string[] : ["home", "about", "services", "contact"];
 
     const pageResults = await Promise.all(
       pages.map((page) =>
