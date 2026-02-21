@@ -13,6 +13,16 @@ import type { Persona, Criterion } from "../../../personas/schema.js";
 const RUNS_DIR = join(process.cwd(), "runs");
 const PERSONAS_DIR = join(process.cwd(), "personas/birthbuild");
 
+/** Minimum fields required before spending tokens on AI generation. */
+export function validateSpecForBuild(spec: Record<string, unknown>): { valid: boolean; missing: string[] } {
+  const missing: string[] = [];
+  if (!spec.business_name) missing.push("business_name");
+  if (!spec.doula_name) missing.push("doula_name");
+  if (!Array.isArray(spec.services) || spec.services.length === 0) missing.push("services");
+  if (!spec.service_area) missing.push("service_area");
+  return { valid: missing.length === 0, missing };
+}
+
 const STORAGE_BASE = "https://btkruvwxhyqotofpfbps.supabase.co/storage/v1/render/image/public/photos/photos/23099152-2ebe-4040-9a45-9a2d0a8fb1c6";
 const STOCK_PHOTOS: PhotoInput[] = [
   { purpose: "hero", publicUrl: `${STORAGE_BASE}/hero-1771509993326.png?width=1200&quality=80`, altText: "Doula supporting a family during birth" },
@@ -149,17 +159,24 @@ export class Orchestrator {
     let previewUrl: string | null = null;
     let buildError: string | null = null;
     if (!config.skipBuild) {
-      try {
-        // Enable AI generation on the spec
-        await upsertSiteSpec(supabase, siteSpecId, { use_llm_generation: true });
+      // Gate: validate spec has minimum data before spending tokens on AI generation
+      const specForValidation = siteSpec ?? accumulatedSpec;
+      const { valid, missing } = validateSpecForBuild(specForValidation);
+      if (!valid) {
+        buildError = `Skipping build — spec missing required fields: ${missing.join(", ")}. The conversation may not have collected enough data.`;
+      } else {
+        try {
+          // Enable AI generation on the spec
+          await upsertSiteSpec(supabase, siteSpecId, { use_llm_generation: true });
 
-        const { files, previewUrl: url } = await this.generateAndDeploy(
-          config, persona.id, siteSpecId, personaDir, onProgress,
-        );
-        previewUrl = url;
-        writeFileSync(join(personaDir, "generated-files.json"), JSON.stringify(files.map((f) => f.path), null, 2));
-      } catch (err) {
-        buildError = err instanceof Error ? err.message : String(err);
+          const { files, previewUrl: url } = await this.generateAndDeploy(
+            config, persona.id, siteSpecId, personaDir, onProgress,
+          );
+          previewUrl = url;
+          writeFileSync(join(personaDir, "generated-files.json"), JSON.stringify(files.map((f) => f.path), null, 2));
+        } catch (err) {
+          buildError = err instanceof Error ? err.message : String(err);
+        }
       }
     }
 
@@ -180,6 +197,12 @@ export class Orchestrator {
   ): Promise<PersonaRunResult> {
     const savedSpec = this.findLatestSavedSpec(personaId);
     if (!savedSpec) throw new Error(`No saved site_spec found for ${personaId}`);
+
+    // Gate: validate before spending tokens
+    const { valid, missing } = validateSpecForBuild(savedSpec);
+    if (!valid) {
+      throw new Error(`Cannot build — saved spec missing required fields: ${missing.join(", ")}`);
+    }
 
     const supabase = createServiceClient(this.supabaseConfig);
     const siteSpecId = await createTestSiteSpec(

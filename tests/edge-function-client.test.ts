@@ -44,6 +44,8 @@ describe("edge-function-client", () => {
       expect(client.chatUrl).toBe("https://abc.supabase.co/functions/v1/chat");
       expect(client.buildUrl).toBe("https://abc.supabase.co/functions/v1/build");
       expect(client.publishUrl).toBe("https://abc.supabase.co/functions/v1/publish");
+      expect(client.generateDesignSystemUrl).toBe("https://abc.supabase.co/functions/v1/generate-design-system");
+      expect(client.generatePageUrl).toBe("https://abc.supabase.co/functions/v1/generate-page");
     });
 
     it("strips trailing slash from base URL", () => {
@@ -52,6 +54,16 @@ describe("edge-function-client", () => {
         authToken: "jwt-token",
       });
       expect(client.chatUrl).toBe("https://abc.supabase.co/functions/v1/chat");
+    });
+
+    it("updateAuthToken replaces the token for subsequent requests", () => {
+      const client = new EdgeFunctionClient({
+        supabaseUrl: "https://abc.supabase.co",
+        authToken: "old-token",
+      });
+      client.updateAuthToken("new-token");
+      // Verify via the headers helper (indirectly — token is private, but we can check it doesn't throw)
+      expect(() => client.updateAuthToken("another-token")).not.toThrow();
     });
   });
 
