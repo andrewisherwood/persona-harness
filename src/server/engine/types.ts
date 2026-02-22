@@ -1,12 +1,22 @@
 export type RunMode = "full-pipeline" | "build-only";
 export type RunStep = "pending" | "chatting" | "evaluating" | "building" | "deploying" | "complete" | "error";
 
+export interface PromptSelection {
+  designSystem: string;          // variant name from manifest
+  generatePage: string;          // variant name from manifest
+  modelProvider?: string;        // "anthropic" | "openai"
+  modelName?: string;
+  temperature?: number;
+  maxTokens?: number;
+  providerApiKey?: string;       // OpenAI only, never persisted to disk
+}
+
 export interface RunConfig {
   id: string;
   mode: RunMode;
   personas: string[];
-  promptSource: string; // "production" or filename of local override
-  promptSourceB?: string; // for A/B mode
+  promptConfig?: PromptSelection;
+  promptConfigB?: PromptSelection;
   maxTurns: number;
   personaModel: string;
   judgeModel: string;
