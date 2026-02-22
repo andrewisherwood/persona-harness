@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { buildSupabaseConfig, validateConfig } from "../src/server/engine/supabase-client.js";
+import { describe, it, expect, vi } from "vitest";
+import { buildSupabaseConfig, validateConfig, STOCK_PHOTOS, seedStockPhotos } from "../src/server/engine/supabase-client.js";
 
 describe("supabase-client", () => {
   describe("validateConfig", () => {
@@ -69,6 +69,70 @@ describe("supabase-client", () => {
       expect(config.supabaseUrl).toBe("");
       expect(config.anonKey).toBe("");
       expect(config.authToken).toBe("");
+    });
+  });
+
+  describe("STOCK_PHOTOS", () => {
+    it("contains 8 photos with required fields", () => {
+      expect(STOCK_PHOTOS).toHaveLength(8);
+      for (const photo of STOCK_PHOTOS) {
+        expect(photo).toHaveProperty("storage_path");
+        expect(photo).toHaveProperty("purpose");
+        expect(photo).toHaveProperty("alt_text");
+        expect(typeof photo.sort_order).toBe("number");
+      }
+    });
+
+    it("includes exactly 1 headshot, 1 hero, and 6 gallery", () => {
+      const purposes = STOCK_PHOTOS.map((p) => p.purpose);
+      expect(purposes.filter((p) => p === "headshot")).toHaveLength(1);
+      expect(purposes.filter((p) => p === "hero")).toHaveLength(1);
+      expect(purposes.filter((p) => p === "gallery")).toHaveLength(6);
+    });
+
+    it("has storage_path values that do not include URL prefix or query params", () => {
+      for (const photo of STOCK_PHOTOS) {
+        expect(photo.storage_path).not.toContain("https://");
+        expect(photo.storage_path).not.toContain("?");
+        expect(photo.storage_path).toMatch(/^photos\//);
+      }
+    });
+  });
+
+  describe("seedStockPhotos", () => {
+    it("inserts all stock photos for a given site_spec_id", async () => {
+      const insertedRows: unknown[] = [];
+      const mockClient = {
+        from: vi.fn().mockReturnValue({
+          insert: vi.fn().mockImplementation((rows: unknown[]) => {
+            insertedRows.push(...rows);
+            return { error: null };
+          }),
+        }),
+      };
+
+      await seedStockPhotos(mockClient as never, "test-spec-id");
+
+      expect(mockClient.from).toHaveBeenCalledWith("photos");
+      expect(insertedRows).toHaveLength(8);
+      for (const row of insertedRows as Array<Record<string, unknown>>) {
+        expect(row.site_spec_id).toBe("test-spec-id");
+        expect(row).toHaveProperty("storage_path");
+        expect(row).toHaveProperty("purpose");
+        expect(row).toHaveProperty("alt_text");
+        expect(row).toHaveProperty("sort_order");
+      }
+    });
+
+    it("throws on insert error", async () => {
+      const mockClient = {
+        from: vi.fn().mockReturnValue({
+          insert: vi.fn().mockReturnValue({ error: { message: "RLS violation" } }),
+        }),
+      };
+
+      await expect(seedStockPhotos(mockClient as never, "test-spec-id"))
+        .rejects.toThrow("Failed to seed stock photos: RLS violation");
     });
   });
 });

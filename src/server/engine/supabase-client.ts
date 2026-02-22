@@ -1,5 +1,37 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+interface StockPhoto {
+  storage_path: string;
+  purpose: string;
+  alt_text: string;
+  sort_order: number;
+}
+
+const USER_PHOTOS_PATH = "photos/23099152-2ebe-4040-9a45-9a2d0a8fb1c6";
+
+export const STOCK_PHOTOS: StockPhoto[] = [
+  { storage_path: `${USER_PHOTOS_PATH}/headshot-1771509974468.png`, purpose: "headshot", alt_text: "Portrait of the doula", sort_order: 0 },
+  { storage_path: `${USER_PHOTOS_PATH}/hero-1771509993326.png`, purpose: "hero", alt_text: "Doula supporting a family during birth", sort_order: 1 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510012988.png`, purpose: "gallery", alt_text: "Prenatal consultation", sort_order: 2 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510047167.png`, purpose: "gallery", alt_text: "Birth support", sort_order: 3 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510066354.png`, purpose: "gallery", alt_text: "Postnatal care", sort_order: 4 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510090086.png`, purpose: "gallery", alt_text: "Family bonding", sort_order: 5 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510112557.png`, purpose: "gallery", alt_text: "Birth preparation", sort_order: 6 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510146957.png`, purpose: "gallery", alt_text: "Supporting families", sort_order: 7 },
+];
+
+export async function seedStockPhotos(
+  client: SupabaseClient,
+  siteSpecId: string,
+): Promise<void> {
+  const rows = STOCK_PHOTOS.map((photo) => ({
+    site_spec_id: siteSpecId,
+    ...photo,
+  }));
+  const { error } = await client.from("photos").insert(rows);
+  if (error) throw new Error(`Failed to seed stock photos: ${error.message}`);
+}
+
 export interface SupabaseConfig {
   supabaseUrl: string;
   anonKey: string;
