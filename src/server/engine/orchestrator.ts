@@ -1,9 +1,9 @@
 import { readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
 import Anthropic from "@anthropic-ai/sdk";
-import type { RunConfig, RunResult, PersonaRunResult, ProgressCallback } from "./types.js";
+import type { RunConfig, RunResult, PersonaRunResult, ProgressCallback, PromptSelection } from "./types.js";
 import { EdgeFunctionClient, extractTextFromResponse, extractToolCalls, isConversationComplete } from "./edge-function-client.js";
-import type { ChatMessage, DesignSystem, PhotoInput, BuildFile } from "./edge-function-client.js";
+import type { ChatMessage, DesignSystem, PhotoInput, BuildFile, PromptConfigPayload } from "./edge-function-client.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { SupabaseConfig } from "./supabase-client.js";
 import { buildStockPhotoInputs, createServiceClient, createTestSiteSpec, generateAuthToken, getSiteSpec, seedStockPhotos, upsertSiteSpec, validateConfig } from "./supabase-client.js";
@@ -12,6 +12,20 @@ import type { Persona, Criterion } from "../../../personas/schema.js";
 
 const RUNS_DIR = join(process.cwd(), "runs");
 const PERSONAS_DIR = join(process.cwd(), "personas/birthbuild");
+
+function readPromptTemplate(birthbuildRoot: string, promptType: string, variantName: string): string | undefined {
+  if (!birthbuildRoot) return undefined;
+  try {
+    const manifestPath = join(birthbuildRoot, "supabase/functions/_shared/prompts/manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, { variants: Record<string, { file: string }> }>;
+    const variant = manifest[promptType]?.variants[variantName];
+    if (!variant) return undefined;
+    const templatePath = join(birthbuildRoot, "supabase/functions/_shared/prompts", variant.file);
+    return readFileSync(templatePath, "utf-8");
+  } catch {
+    return undefined;
+  }
+}
 
 /** Minimum fields required before spending tokens on AI generation. */
 export function validateSpecForBuild(spec: Record<string, unknown>): { valid: boolean; missing: string[] } {
@@ -63,7 +77,11 @@ export class Orchestrator {
       totalCost: 0,
     };
 
-    writeFileSync(join(runDir, "config.json"), JSON.stringify(config, null, 2));
+    // Strip sensitive fields before saving to disk
+    const safeConfig = structuredClone(config);
+    if (safeConfig.promptConfig) delete safeConfig.promptConfig.providerApiKey;
+    if (safeConfig.promptConfigB) delete safeConfig.promptConfigB.providerApiKey;
+    writeFileSync(join(runDir, "config.json"), JSON.stringify(safeConfig, null, 2));
 
     for (const personaId of config.personas) {
       const personaResult = await this.executePersonaRun(config, personaId, runDir, onProgress);
@@ -159,7 +177,7 @@ export class Orchestrator {
           await upsertSiteSpec(supabase, siteSpecId, { use_llm_generation: true });
 
           const { files, previewUrl: url } = await this.generateAndDeploy(
-            config, persona.id, siteSpecId, personaDir, onProgress, costTracker,
+            config, persona.id, siteSpecId, personaDir, onProgress, costTracker, config.promptConfig,
           );
           previewUrl = url;
           writeFileSync(join(personaDir, "generated-files.json"), JSON.stringify(files.map((f) => f.path), null, 2));
@@ -203,7 +221,7 @@ export class Orchestrator {
     await upsertSiteSpec(supabase, siteSpecId, { ...specData, use_llm_generation: true });
 
     const { previewUrl } = await this.generateAndDeploy(
-      config, personaId, siteSpecId, personaDir, onProgress, costTracker,
+      config, personaId, siteSpecId, personaDir, onProgress, costTracker, config.promptConfig,
     );
 
     const cost = costTracker.getSummary();
@@ -227,10 +245,40 @@ export class Orchestrator {
     personaDir: string,
     onProgress: ProgressCallback,
     costTracker?: CostTracker,
+    promptConfig?: PromptSelection,
   ): Promise<{ files: BuildFile[]; previewUrl: string }> {
     // Step 1: Generate design system
     onProgress({ runId: config.id, persona: personaId, step: "building" });
-    const dsResponse = await this.edgeClient.generateDesignSystem(siteSpecId);
+
+    // Build prompt_config payload if a custom prompt selection was provided
+    const birthbuildRoot = process.env.BIRTHBUILD_ROOT ?? "";
+    let dsPromptConfig: PromptConfigPayload | undefined;
+    let pagePromptConfig: PromptConfigPayload | undefined;
+
+    if (promptConfig) {
+      const dsTemplate = readPromptTemplate(birthbuildRoot, "design-system", promptConfig.designSystem);
+      const pageTemplate = readPromptTemplate(birthbuildRoot, "generate-page", promptConfig.generatePage);
+
+      const baseConfig: Partial<PromptConfigPayload> = {};
+      if (promptConfig.modelProvider) baseConfig.model_provider = promptConfig.modelProvider;
+      if (promptConfig.modelName) baseConfig.model_name = promptConfig.modelName;
+      if (promptConfig.temperature !== undefined) baseConfig.temperature = promptConfig.temperature;
+      if (promptConfig.maxTokens) baseConfig.max_tokens = promptConfig.maxTokens;
+      if (promptConfig.providerApiKey) baseConfig.provider_api_key = promptConfig.providerApiKey;
+
+      if (dsTemplate || Object.keys(baseConfig).length > 0) {
+        dsPromptConfig = { ...baseConfig };
+        if (dsTemplate) dsPromptConfig.system_prompt = dsTemplate;
+      }
+      if (pageTemplate || Object.keys(baseConfig).length > 0) {
+        pagePromptConfig = { ...baseConfig };
+        if (pageTemplate) pagePromptConfig.system_prompt = pageTemplate;
+      }
+    }
+
+    const estimatedModel = promptConfig?.modelName ?? "claude-sonnet-4-5-20250929";
+
+    const dsResponse = await this.edgeClient.generateDesignSystem(siteSpecId, dsPromptConfig);
     const designSystem: DesignSystem = {
       css: dsResponse.css,
       nav_html: dsResponse.nav_html,
@@ -244,7 +292,7 @@ export class Orchestrator {
     costTracker?.recordEstimatedCall("build_estimated", {
       messageCount: 1,
       estimatedTokens: 3000 + dsOutputTokens, // ~3K input tokens for system prompt + spec
-      model: "claude-sonnet-4-5-20250929",
+      model: estimatedModel,
     });
 
     // Step 2: Generate pages in parallel
@@ -256,7 +304,7 @@ export class Orchestrator {
     const photos: PhotoInput[] = buildStockPhotoInputs(this.supabaseConfig.supabaseUrl);
     const pageResults = await Promise.all(
       pages.map((page) =>
-        this.edgeClient.generatePage(siteSpecId, page, designSystem, photos),
+        this.edgeClient.generatePage(siteSpecId, page, designSystem, photos, pagePromptConfig),
       ),
     );
 
@@ -271,7 +319,7 @@ export class Orchestrator {
       costTracker?.recordEstimatedCall("build_estimated", {
         messageCount: 1,
         estimatedTokens: 8000 + pageOutputTokens, // ~8K input tokens for system prompt + spec + design system
-        model: "claude-sonnet-4-5-20250929",
+        model: estimatedModel,
       });
     }
 

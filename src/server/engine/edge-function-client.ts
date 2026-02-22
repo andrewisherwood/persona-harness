@@ -65,6 +65,16 @@ export interface GeneratePageResponse {
   html: string;
 }
 
+export interface PromptConfigPayload {
+  system_prompt?: string;
+  user_message?: string;
+  model_provider?: string;
+  model_name?: string;
+  temperature?: number;
+  max_tokens?: number;
+  provider_api_key?: string;
+}
+
 export function buildChatRequest(messages: ChatMessage[]): { messages: ChatMessage[] } {
   return { messages };
 }
@@ -74,6 +84,27 @@ export function buildBuildRequest(
   files: BuildFile[],
 ): { site_spec_id: string; files: BuildFile[] } {
   return { site_spec_id: siteSpecId, files };
+}
+
+export function buildDesignSystemRequest(
+  siteSpecId: string,
+  promptConfig?: PromptConfigPayload,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { site_spec_id: siteSpecId };
+  if (promptConfig) body.prompt_config = promptConfig;
+  return body;
+}
+
+export function buildPageRequest(
+  siteSpecId: string,
+  page: string,
+  designSystem: DesignSystem,
+  photos: PhotoInput[],
+  promptConfig?: PromptConfigPayload,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { site_spec_id: siteSpecId, page, design_system: designSystem, photos };
+  if (promptConfig) body.prompt_config = promptConfig;
+  return body;
 }
 
 /**
@@ -182,11 +213,11 @@ export class EdgeFunctionClient {
     return response.json() as Promise<PublishResponse>;
   }
 
-  async generateDesignSystem(siteSpecId: string): Promise<DesignSystemResponse> {
+  async generateDesignSystem(siteSpecId: string, promptConfig?: PromptConfigPayload): Promise<DesignSystemResponse> {
     const response = await fetch(this.generateDesignSystemUrl, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ site_spec_id: siteSpecId }),
+      body: JSON.stringify(buildDesignSystemRequest(siteSpecId, promptConfig)),
     });
     if (!response.ok) {
       const text = await response.text();
@@ -200,16 +231,12 @@ export class EdgeFunctionClient {
     page: string,
     designSystem: DesignSystem,
     photos: PhotoInput[],
+    promptConfig?: PromptConfigPayload,
   ): Promise<GeneratePageResponse> {
     const response = await fetch(this.generatePageUrl, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({
-        site_spec_id: siteSpecId,
-        page,
-        design_system: designSystem,
-        photos,
-      }),
+      body: JSON.stringify(buildPageRequest(siteSpecId, page, designSystem, photos, promptConfig)),
     });
     if (!response.ok) {
       const text = await response.text();

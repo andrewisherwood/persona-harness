@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   buildChatRequest,
   buildBuildRequest,
+  buildDesignSystemRequest,
+  buildPageRequest,
   EdgeFunctionClient,
   extractTextFromResponse,
   extractToolCalls,
@@ -146,6 +148,41 @@ describe("edge-function-client", () => {
         usage: { input_tokens: 100, output_tokens: 50 },
       };
       expect(isConversationComplete(response)).toBe(false);
+    });
+  });
+
+  describe("buildDesignSystemRequest", () => {
+    it("includes only site_spec_id when no prompt config", () => {
+      const body = buildDesignSystemRequest("spec-1");
+      expect(body).toEqual({ site_spec_id: "spec-1" });
+    });
+
+    it("includes prompt_config when provided", () => {
+      const body = buildDesignSystemRequest("spec-1", {
+        system_prompt: "You are...",
+        model_name: "claude-opus-4-6",
+        temperature: 0.8,
+      });
+      expect(body.prompt_config).toEqual({
+        system_prompt: "You are...",
+        model_name: "claude-opus-4-6",
+        temperature: 0.8,
+      });
+    });
+  });
+
+  describe("buildPageRequest", () => {
+    it("includes prompt_config when provided", () => {
+      const body = buildPageRequest("spec-1", "home", { css: "", nav_html: "", footer_html: "", wordmark_svg: "" }, [], {
+        system_prompt: "Generate...",
+        model_provider: "openai",
+        model_name: "gpt-5.2",
+      });
+      expect(body.prompt_config).toEqual({
+        system_prompt: "Generate...",
+        model_provider: "openai",
+        model_name: "gpt-5.2",
+      });
     });
   });
 });
