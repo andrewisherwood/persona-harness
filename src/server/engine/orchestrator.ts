@@ -3,10 +3,10 @@ import { join } from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import type { RunConfig, RunResult, PersonaRunResult, ProgressCallback } from "./types.js";
 import { EdgeFunctionClient, extractTextFromResponse, extractToolCalls, isConversationComplete } from "./edge-function-client.js";
-import type { ChatMessage, DesignSystem, PhotoInput, BuildFile } from "./edge-function-client.js";
+import type { ChatMessage, DesignSystem, BuildFile } from "./edge-function-client.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { SupabaseConfig } from "./supabase-client.js";
-import { createServiceClient, createTestSiteSpec, generateAuthToken, getSiteSpec, upsertSiteSpec, validateConfig } from "./supabase-client.js";
+import { createServiceClient, createTestSiteSpec, generateAuthToken, getSiteSpec, seedStockPhotos, upsertSiteSpec, validateConfig } from "./supabase-client.js";
 import { SpecAccumulator } from "../../../lib/spec-accumulator.js";
 import type { Persona, Criterion } from "../../../personas/schema.js";
 
@@ -22,18 +22,6 @@ export function validateSpecForBuild(spec: Record<string, unknown>): { valid: bo
   if (!spec.service_area) missing.push("service_area");
   return { valid: missing.length === 0, missing };
 }
-
-const STORAGE_BASE = "https://btkruvwxhyqotofpfbps.supabase.co/storage/v1/render/image/public/photos/photos/23099152-2ebe-4040-9a45-9a2d0a8fb1c6";
-const STOCK_PHOTOS: PhotoInput[] = [
-  { purpose: "hero", publicUrl: `${STORAGE_BASE}/hero-1771509993326.png?width=1200&quality=80`, altText: "Doula supporting a family during birth" },
-  { purpose: "headshot", publicUrl: `${STORAGE_BASE}/headshot-1771509974468.png?width=600&quality=80`, altText: "Portrait of the doula" },
-  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510012988.png?width=800&quality=80`, altText: "Prenatal consultation" },
-  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510047167.png?width=800&quality=80`, altText: "Birth support" },
-  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510066354.png?width=800&quality=80`, altText: "Postnatal care" },
-  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510090086.png?width=800&quality=80`, altText: "Family bonding" },
-  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510112557.png?width=800&quality=80`, altText: "Birth preparation" },
-  { purpose: "gallery", publicUrl: `${STORAGE_BASE}/gallery-1771510146957.png?width=800&quality=80`, altText: "Supporting families" },
-];
 
 export class Orchestrator {
   private edgeClient: EdgeFunctionClient;
@@ -136,6 +124,7 @@ export class Orchestrator {
     const siteSpecId = await createTestSiteSpec(
       supabase, this.supabaseConfig.testTenantId, this.supabaseConfig.testUserId,
     );
+    await seedStockPhotos(supabase, siteSpecId);
 
     // Run conversation (also accumulates tool calls into site spec)
     const { conversation, accumulatedSpec } = await this.runConversation(config, persona, siteSpecId, costTracker, onProgress);
@@ -208,6 +197,7 @@ export class Orchestrator {
     const siteSpecId = await createTestSiteSpec(
       supabase, this.supabaseConfig.testTenantId, this.supabaseConfig.testUserId,
     );
+    await seedStockPhotos(supabase, siteSpecId);
     // Strip immutable DB fields before updating the new row
     const { id: _id, user_id: _uid, tenant_id: _tid, created_at: _ca, ...specData } = savedSpec;
     await upsertSiteSpec(supabase, siteSpecId, { ...specData, use_llm_generation: true });
@@ -256,7 +246,7 @@ export class Orchestrator {
 
     const pageResults = await Promise.all(
       pages.map((page) =>
-        this.edgeClient.generatePage(siteSpecId, page, designSystem, STOCK_PHOTOS),
+        this.edgeClient.generatePage(siteSpecId, page, designSystem, []),
       ),
     );
 
