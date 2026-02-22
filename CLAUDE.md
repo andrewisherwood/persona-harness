@@ -207,6 +207,32 @@ See `docs/edge-function-contracts.md` for full details. Key points:
 4. Generated files are passed to `/build` endpoint → Netlify deployment → preview URL
 5. Both `accumulated-spec.json` (local) and `site-spec.json` (DB) are saved for comparison
 
+## Prompt Optimisation Workflow
+
+The harness enables rapid iteration on BirthBuild's edge function prompts via **build-only mode** (~2 min per cycle vs 15+ min for a full conversation run).
+
+### Workflow
+
+1. Edit prompt in BirthBuild (`supabase/functions/`)
+2. Deploy edge function (`supabase functions deploy <name>`)
+3. Trigger build-only run from the dashboard (reuses a saved site spec)
+4. Inspect the deployed preview site for regressions
+
+### Key BirthBuild Files (prompt optimisation)
+
+| File | Purpose |
+|------|---------|
+| `supabase/functions/_shared/prompts/design-system/v1-structured.md` | Template prompt for design system CSS generation |
+| `supabase/functions/generate-design-system/index.ts` | Hardcoded prompt + `REQUIRED_CSS_SELECTORS` validation |
+| `supabase/functions/generate-page/index.ts` | Per-page prompt requirements (about, services, etc.) |
+| `supabase/functions/_shared/sanitise-html.ts` | CSS sanitiser — `enforceDesignSystemCss()` |
+
+### Critical Constraint: `enforceDesignSystemCss()`
+
+`generate-page/index.ts` calls `enforceDesignSystemCss()` which strips ALL `<style>` blocks from generated pages and re-injects only the design system CSS. Any CSS class used in page HTML **must** be defined in the design system prompt — page-level styles will be discarded.
+
+If a page layout looks broken (flat, stacked, unstyled), the first thing to check is whether the required CSS selectors are in the design system prompt and the `REQUIRED_CSS_SELECTORS` validation array.
+
 ## Known Limitations
 
 - Pre-existing CLI runs use timestamp-named directories; new dashboard runs use UUID directories. Both formats are supported by the cost aggregator and run listing.
