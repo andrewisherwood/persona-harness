@@ -59,7 +59,7 @@ persona-harness/
 │   └── smoke-test.ts         # Manual E2E integration test
 ├── runs/                     # Output directory (gitignored)
 ├── run.ts                    # CLI entry point
-├── tests/                    # Vitest test files (104 tests, 16 files)
+├── tests/                    # Vitest test files (139 tests, 16 files)
 ├── docs/
 │   ├── edge-function-contracts.md  # Production edge function HTTP contracts
 │   └── plans/                      # Design + implementation plans
@@ -83,7 +83,7 @@ npm run harness -- diff <run1> <run2>
 npm run harness -- report <run-dir>
 
 # Testing
-npm test                  # Run all 104 tests
+npm test                  # Run all 139 tests
 npm run test:watch        # Watch mode
 npm run typecheck         # tsc --noEmit
 
@@ -101,6 +101,7 @@ Required for dashboard runs (in `.env`):
 - `TEST_TENANT_ID` — Test tenant UUID
 - `TEST_USER_ID` — Test user UUID
 - `API_PORT` — Express server port (default: 3001)
+- `BIRTHBUILD_ROOT` — Path to BirthBuild project root (for reading/writing prompt templates)
 - `AUTH_TOKEN` — (optional) Manual override; auto-generated from TEST_USER_ID if omitted
 
 ## API Endpoints
@@ -110,8 +111,13 @@ Required for dashboard runs (in `.env`):
 | GET | `/api/health` | Server health + env var status |
 | GET | `/api/personas` | List all personas |
 | GET | `/api/personas/:id` | Get persona details |
-| GET | `/api/prompts` | List available prompts |
-| GET | `/api/prompts/:id` | Get prompt content |
+| GET | `/api/prompts` | Full manifest (prompt types + variants) |
+| GET | `/api/prompts/:type/:variant` | Read prompt template content |
+| PUT | `/api/prompts/:type/:variant` | Update prompt template content |
+| POST | `/api/prompts/:type` | Create new variant |
+| DELETE | `/api/prompts/:type/:variant` | Delete variant |
+| POST | `/api/prompts/:type/:variant/duplicate` | Duplicate variant |
+| PUT | `/api/prompts/:type/production` | Set production variant |
 | GET | `/api/config` | Get harness config |
 | PUT | `/api/config` | Update harness config |
 | GET | `/api/runs` | List all runs |
