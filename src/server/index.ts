@@ -27,10 +27,14 @@ export function createApp(): Express {
       envStatus[k] = !!process.env[k];
     }
     const allSet = Object.values(envStatus).every(Boolean);
+    const optional: Record<string, boolean> = {
+      OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+    };
     res.json({
       status: allSet ? "ok" : "misconfigured",
       timestamp: new Date().toISOString(),
       env: envStatus,
+      optional,
     });
   });
 

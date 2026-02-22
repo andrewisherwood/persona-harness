@@ -264,7 +264,9 @@ export class Orchestrator {
       if (promptConfig.modelName) baseConfig.model_name = promptConfig.modelName;
       if (promptConfig.temperature !== undefined) baseConfig.temperature = promptConfig.temperature;
       if (promptConfig.maxTokens) baseConfig.max_tokens = promptConfig.maxTokens;
-      if (promptConfig.providerApiKey) baseConfig.provider_api_key = promptConfig.providerApiKey;
+      const apiKey = promptConfig.providerApiKey
+        || (promptConfig.modelProvider === "openai" ? process.env.OPENAI_API_KEY : undefined);
+      if (apiKey) baseConfig.provider_api_key = apiKey;
 
       if (dsTemplate || Object.keys(baseConfig).length > 0) {
         dsPromptConfig = { ...baseConfig };
