@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { buildSupabaseConfig, validateConfig, STOCK_PHOTOS, seedStockPhotos } from "../src/server/engine/supabase-client.js";
+import { buildStockPhotoInputs, buildSupabaseConfig, validateConfig, STOCK_PHOTOS, seedStockPhotos } from "../src/server/engine/supabase-client.js";
 
 describe("supabase-client", () => {
   describe("validateConfig", () => {
@@ -133,6 +133,24 @@ describe("supabase-client", () => {
 
       await expect(seedStockPhotos(mockClient as never, "test-spec-id"))
         .rejects.toThrow("Failed to seed stock photos: RLS violation");
+    });
+  });
+
+  describe("buildStockPhotoInputs", () => {
+    it("returns PhotoInput-compatible objects with full public URLs", () => {
+      const inputs = buildStockPhotoInputs("https://abc.supabase.co");
+      expect(inputs).toHaveLength(8);
+      for (const input of inputs) {
+        expect(input.publicUrl).toMatch(/^https:\/\/abc\.supabase\.co\/storage\/v1\/object\/public\/photos\/photos\//);
+        expect(input).toHaveProperty("purpose");
+        expect(input).toHaveProperty("altText");
+      }
+    });
+
+    it("strips trailing slash from supabaseUrl", () => {
+      const inputs = buildStockPhotoInputs("https://abc.supabase.co/");
+      expect(inputs[0].publicUrl).toContain("abc.supabase.co/storage/");
+      expect(inputs[0].publicUrl).not.toContain("co//storage");
     });
   });
 });

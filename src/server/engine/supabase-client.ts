@@ -10,14 +10,14 @@ interface StockPhoto {
 const USER_PHOTOS_PATH = "photos/23099152-2ebe-4040-9a45-9a2d0a8fb1c6";
 
 export const STOCK_PHOTOS: StockPhoto[] = [
-  { storage_path: `${USER_PHOTOS_PATH}/headshot-1771509974468.png`, purpose: "headshot", alt_text: "Portrait of the doula", sort_order: 0 },
-  { storage_path: `${USER_PHOTOS_PATH}/hero-1771509993326.png`, purpose: "hero", alt_text: "Doula supporting a family during birth", sort_order: 1 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510012988.png`, purpose: "gallery", alt_text: "Prenatal consultation", sort_order: 2 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510047167.png`, purpose: "gallery", alt_text: "Birth support", sort_order: 3 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510066354.png`, purpose: "gallery", alt_text: "Postnatal care", sort_order: 4 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510090086.png`, purpose: "gallery", alt_text: "Family bonding", sort_order: 5 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510112557.png`, purpose: "gallery", alt_text: "Birth preparation", sort_order: 6 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771510146957.png`, purpose: "gallery", alt_text: "Supporting families", sort_order: 7 },
+  { storage_path: `${USER_PHOTOS_PATH}/headshot-1771717626849.png`, purpose: "headshot", alt_text: "Dina", sort_order: 0 },
+  { storage_path: `${USER_PHOTOS_PATH}/hero-1771717638124.png`, purpose: "hero", alt_text: "Supporting you", sort_order: 1 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717642408.png`, purpose: "gallery", alt_text: "Antenatal Consultation", sort_order: 2 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717645405.png`, purpose: "gallery", alt_text: "Hospital Birth", sort_order: 3 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717663154.png`, purpose: "gallery", alt_text: "Home Birth", sort_order: 4 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717670422.png`, purpose: "gallery", alt_text: "Holding hands", sort_order: 5 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717674293.png`, purpose: "gallery", alt_text: "Hypnobirthing Class", sort_order: 6 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717691089.png`, purpose: "gallery", alt_text: "Preparations", sort_order: 7 },
 ];
 
 export async function seedStockPhotos(
@@ -30,6 +30,20 @@ export async function seedStockPhotos(
   }));
   const { error } = await client.from("photos").insert(rows);
   if (error) throw new Error(`Failed to seed stock photos: ${error.message}`);
+}
+
+/**
+ * Build photo inputs with full public URLs for the /generate-page edge function.
+ * The edge function reads photos from the request body (not from the DB),
+ * so we need to pass them with resolved publicUrl values.
+ */
+export function buildStockPhotoInputs(supabaseUrl: string): Array<{ purpose: string; publicUrl: string; altText: string }> {
+  const storageBase = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/object/public/photos`;
+  return STOCK_PHOTOS.map((photo) => ({
+    purpose: photo.purpose,
+    publicUrl: `${storageBase}/${photo.storage_path}`,
+    altText: photo.alt_text,
+  }));
 }
 
 export interface SupabaseConfig {

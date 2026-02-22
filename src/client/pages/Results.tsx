@@ -2,10 +2,26 @@ import { Link } from "react-router-dom";
 import { useApi } from "../hooks/useApi.js";
 import "./Results.css";
 
+interface PersonaResult {
+  error?: string | null;
+  previewUrl?: string | null;
+  evaluation?: { overall_pass?: boolean } | null;
+}
+
 interface RunEntry {
   id: string;
   config: { personas?: string[]; mode?: string };
-  summary: { overall_pass?: boolean } | null;
+  summary: {
+    personas?: Record<string, PersonaResult>;
+  } | null;
+}
+
+function deriveRunStatus(run: RunEntry): "pass" | "fail" | "pending" {
+  if (!run.summary?.personas) return "pending";
+  const results = Object.values(run.summary.personas);
+  if (results.length === 0) return "pending";
+  const allSucceeded = results.every((r) => !r.error);
+  return allSucceeded ? "pass" : "fail";
 }
 
 export function Results() {
@@ -20,6 +36,7 @@ export function Results() {
         {runs?.map((run) => {
           const personaCount = run.config?.personas?.length ?? 0;
           const mode = run.config?.mode ?? "unknown";
+          const status = deriveRunStatus(run);
           return (
             <Link
               key={run.id}
@@ -33,14 +50,8 @@ export function Results() {
                   {mode}
                 </span>
               </div>
-              <span
-                className={`badge badge-${run.summary?.overall_pass ? "pass" : "fail"}`}
-              >
-                {run.summary?.overall_pass
-                  ? "PASS"
-                  : run.summary
-                    ? "FAIL"
-                    : "\u2014"}
+              <span className={`badge badge-${status === "pending" ? "running" : status}`}>
+                {status === "pass" ? "PASS" : status === "fail" ? "FAIL" : "\u2014"}
               </span>
             </Link>
           );

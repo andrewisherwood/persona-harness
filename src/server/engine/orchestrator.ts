@@ -3,10 +3,10 @@ import { join } from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import type { RunConfig, RunResult, PersonaRunResult, ProgressCallback } from "./types.js";
 import { EdgeFunctionClient, extractTextFromResponse, extractToolCalls, isConversationComplete } from "./edge-function-client.js";
-import type { ChatMessage, DesignSystem, BuildFile } from "./edge-function-client.js";
+import type { ChatMessage, DesignSystem, PhotoInput, BuildFile } from "./edge-function-client.js";
 import { CostTracker } from "./cost-tracker.js";
 import type { SupabaseConfig } from "./supabase-client.js";
-import { createServiceClient, createTestSiteSpec, generateAuthToken, getSiteSpec, seedStockPhotos, upsertSiteSpec, validateConfig } from "./supabase-client.js";
+import { buildStockPhotoInputs, createServiceClient, createTestSiteSpec, generateAuthToken, getSiteSpec, seedStockPhotos, upsertSiteSpec, validateConfig } from "./supabase-client.js";
 import { SpecAccumulator } from "../../../lib/spec-accumulator.js";
 import type { Persona, Criterion } from "../../../personas/schema.js";
 
@@ -159,7 +159,7 @@ export class Orchestrator {
           await upsertSiteSpec(supabase, siteSpecId, { use_llm_generation: true });
 
           const { files, previewUrl: url } = await this.generateAndDeploy(
-            config, persona.id, siteSpecId, personaDir, onProgress,
+            config, persona.id, siteSpecId, personaDir, onProgress, costTracker,
           );
           previewUrl = url;
           writeFileSync(join(personaDir, "generated-files.json"), JSON.stringify(files.map((f) => f.path), null, 2));
@@ -203,7 +203,7 @@ export class Orchestrator {
     await upsertSiteSpec(supabase, siteSpecId, { ...specData, use_llm_generation: true });
 
     const { previewUrl } = await this.generateAndDeploy(
-      config, personaId, siteSpecId, personaDir, onProgress,
+      config, personaId, siteSpecId, personaDir, onProgress, costTracker,
     );
 
     const cost = costTracker.getSummary();
@@ -226,6 +226,7 @@ export class Orchestrator {
     siteSpecId: string,
     personaDir: string,
     onProgress: ProgressCallback,
+    costTracker?: CostTracker,
   ): Promise<{ files: BuildFile[]; previewUrl: string }> {
     // Step 1: Generate design system
     onProgress({ runId: config.id, persona: personaId, step: "building" });
@@ -238,15 +239,24 @@ export class Orchestrator {
     };
     writeFileSync(join(personaDir, "design-system.json"), JSON.stringify(designSystem, null, 2));
 
+    // Estimate design system generation cost (LLM call inside edge function)
+    const dsOutputTokens = Math.ceil((designSystem.css.length + designSystem.nav_html.length + designSystem.footer_html.length) / 4);
+    costTracker?.recordEstimatedCall("build_estimated", {
+      messageCount: 1,
+      estimatedTokens: 3000 + dsOutputTokens, // ~3K input tokens for system prompt + spec
+      model: "claude-sonnet-4-5-20250929",
+    });
+
     // Step 2: Generate pages in parallel
     // Read the spec to get the pages list
     const supabase = createServiceClient(this.supabaseConfig);
     const specData = await getSiteSpec(supabase, siteSpecId);
     const pages = Array.isArray(specData.pages) && specData.pages.length > 0 ? specData.pages as string[] : ["home", "about", "services", "contact"];
 
+    const photos: PhotoInput[] = buildStockPhotoInputs(this.supabaseConfig.supabaseUrl);
     const pageResults = await Promise.all(
       pages.map((page) =>
-        this.edgeClient.generatePage(siteSpecId, page, designSystem, []),
+        this.edgeClient.generatePage(siteSpecId, page, designSystem, photos),
       ),
     );
 
@@ -254,6 +264,16 @@ export class Orchestrator {
       path: r.filename,
       content: r.html,
     }));
+
+    // Estimate page generation costs (1 LLM call per page inside edge functions)
+    for (const result of pageResults) {
+      const pageOutputTokens = Math.ceil(result.html.length / 4);
+      costTracker?.recordEstimatedCall("build_estimated", {
+        messageCount: 1,
+        estimatedTokens: 8000 + pageOutputTokens, // ~8K input tokens for system prompt + spec + design system
+        model: "claude-sonnet-4-5-20250929",
+      });
+    }
 
     // Step 3: Deploy
     onProgress({ runId: config.id, persona: personaId, step: "deploying" });
