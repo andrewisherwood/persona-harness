@@ -40,3 +40,9 @@ export async function putApi<T>(path: string, body: unknown): Promise<T> {
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return r.json() as Promise<T>;
 }
+
+export async function deleteApi<T>(path: string): Promise<T> {
+  const r = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json() as Promise<T>;
+}
