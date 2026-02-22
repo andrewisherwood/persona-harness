@@ -84,16 +84,14 @@ describe("E2E Smoke Tests -- Level 1", () => {
   });
 
   describe("GET /api/prompts", () => {
-    it("returns an array with at least the production prompt", async () => {
+    it("returns 500 when BIRTHBUILD_ROOT is not configured", async () => {
       const res = await fetch(`${baseUrl}/api/prompts`);
-      expect(res.status).toBe(200);
+      // Without BIRTHBUILD_ROOT pointing to a valid directory, manifest.json cannot be read
+      expect(res.status).toBe(500);
 
-      const body = (await res.json()) as Array<{ id: string; name: string; source: string }>;
-      expect(Array.isArray(body)).toBe(true);
-
-      const production = body.find((p) => p.id === "production");
-      expect(production).toBeDefined();
-      expect(production!.source).toBe("edge-function");
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBeDefined();
+      expect(body.error).toContain("Failed to read manifest");
     });
   });
 

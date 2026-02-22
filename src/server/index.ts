@@ -3,14 +3,14 @@ import type { Express } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { personasRouter } from "./routes/personas.js";
-import { promptsRouter } from "./routes/prompts.js";
+import { createPromptsRouter } from "./routes/prompts.js";
 import { createRunsRouter } from "./routes/runs.js";
 import { configRouter } from "./routes/config.js";
 import { costRouter } from "./routes/cost.js";
 import { Orchestrator } from "./engine/orchestrator.js";
 import { buildSupabaseConfig, generateAuthToken, validateConfig } from "./engine/supabase-client.js";
 
-const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "TEST_TENANT_ID", "TEST_USER_ID"];
+const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "TEST_TENANT_ID", "TEST_USER_ID", "BIRTHBUILD_ROOT"];
 
 /**
  * Creates and configures the Express application without starting a listener.
@@ -38,7 +38,8 @@ export function createApp(): Express {
   const orchestrator = new Orchestrator(supabaseConfig);
 
   app.use("/api/personas", personasRouter);
-  app.use("/api/prompts", promptsRouter);
+  const birthbuildRoot = process.env.BIRTHBUILD_ROOT ?? "";
+  app.use("/api/prompts", createPromptsRouter(birthbuildRoot));
   app.use("/api/runs", createRunsRouter(orchestrator));
   app.use("/api/config", configRouter);
   app.use("/api/cost", costRouter);
