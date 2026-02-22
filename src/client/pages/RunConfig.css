@@ -25,3 +25,16 @@
 .range-value { font-weight: 600; min-width: 30px; }
 
 .start-btn { padding: var(--space-3) var(--space-8); font-size: var(--text-lg); align-self: flex-start; }
+
+/* Prompt config panel */
+.prompt-config-panel { display: flex; flex-direction: column; gap: var(--space-3); }
+.prompt-config-label { margin: 0; font-size: var(--text-sm); color: var(--color-text-muted); border-top: 1px solid var(--color-border); padding-top: var(--space-3); }
+.prompt-selects { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.prompt-selects label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
+.model-config { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.model-config label { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--text-sm); }
+.model-config input[type="number"],
+.model-config input[type="password"] {
+  padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}

@@ -5,22 +5,142 @@ import { CostSummaryWidget } from "../components/CostSummaryWidget.js";
 import "./RunConfig.css";
 
 interface PersonaSummary { id: string; name: string; background: string }
-interface PromptSummary { id: string; name: string; source: string }
+
+interface ManifestVariant { description: string; file: string }
+interface ManifestEntry { production: string; variants: Record<string, ManifestVariant> }
+type Manifest = Record<string, ManifestEntry>;
+
+const ANTHROPIC_MODELS = [
+  { id: "claude-sonnet-4-5-20250929", label: "Sonnet 4.5" },
+  { id: "claude-opus-4-6", label: "Opus 4.6" },
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+];
+
+const OPENAI_MODELS = [
+  { id: "gpt-5.2", label: "GPT-5.2" },
+  { id: "gpt-5.2-pro", label: "GPT-5.2 Pro" },
+  { id: "gpt-5-mini", label: "GPT-5 Mini" },
+];
+
+interface PromptConfigState {
+  designSystem: string;
+  generatePage: string;
+  modelProvider: "anthropic" | "openai";
+  modelName: string;
+  temperature: number;
+  maxTokens: string;
+  providerApiKey: string;
+}
+
+function defaultPromptConfig(manifest: Manifest | null): PromptConfigState {
+  return {
+    designSystem: manifest?.["design-system"]?.production ?? "v1-structured",
+    generatePage: manifest?.["generate-page"]?.production ?? "v1-structured",
+    modelProvider: "anthropic",
+    modelName: "claude-sonnet-4-5-20250929",
+    temperature: 0.7,
+    maxTokens: "",
+    providerApiKey: "",
+  };
+}
+
+function PromptConfigPanel({
+  config, onChange, manifest, label,
+}: {
+  config: PromptConfigState;
+  onChange: (c: PromptConfigState) => void;
+  manifest: Manifest | null;
+  label: string;
+}) {
+  const models = config.modelProvider === "anthropic" ? ANTHROPIC_MODELS : OPENAI_MODELS;
+  const dsEntry = manifest?.["design-system"];
+  const gpEntry = manifest?.["generate-page"];
+
+  return (
+    <div className="prompt-config-panel">
+      {label && <h4 className="prompt-config-label">{label}</h4>}
+      <div className="prompt-selects">
+        <label>
+          <span>Design System:</span>
+          <select value={config.designSystem} onChange={(e) => onChange({ ...config, designSystem: e.target.value })}>
+            {dsEntry && Object.entries(dsEntry.variants).map(([name]) => (
+              <option key={name} value={name}>
+                {name}{dsEntry.production === name ? " (LIVE)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Page Prompt:</span>
+          <select value={config.generatePage} onChange={(e) => onChange({ ...config, generatePage: e.target.value })}>
+            {gpEntry && Object.entries(gpEntry.variants).map(([name]) => (
+              <option key={name} value={name}>
+                {name}{gpEntry.production === name ? " (LIVE)" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="model-config">
+        <label>
+          <span>Provider:</span>
+          <div className="mode-toggle">
+            <button
+              className={config.modelProvider === "anthropic" ? "btn-primary" : "btn-secondary"}
+              onClick={() => onChange({ ...config, modelProvider: "anthropic", modelName: ANTHROPIC_MODELS[0]?.id ?? "claude-sonnet-4-5-20250929" })}
+            >Anthropic</button>
+            <button
+              className={config.modelProvider === "openai" ? "btn-primary" : "btn-secondary"}
+              onClick={() => onChange({ ...config, modelProvider: "openai", modelName: OPENAI_MODELS[0]?.id ?? "gpt-5.2" })}
+            >OpenAI</button>
+          </div>
+        </label>
+        <label>
+          <span>Model:</span>
+          <select value={config.modelName} onChange={(e) => onChange({ ...config, modelName: e.target.value })}>
+            {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Temperature:</span>
+          <input type="range" min={0} max={1} step={0.1} value={config.temperature}
+            onChange={(e) => onChange({ ...config, temperature: Number(e.target.value) })} />
+          <span className="range-value">{config.temperature.toFixed(1)}</span>
+        </label>
+        <label>
+          <span>Max tokens:</span>
+          <input type="number" min={1} max={32768} placeholder="Default"
+            value={config.maxTokens} onChange={(e) => onChange({ ...config, maxTokens: e.target.value })} />
+        </label>
+        {config.modelProvider === "openai" && (
+          <label>
+            <span>API Key:</span>
+            <input type="password" placeholder="sk-..." value={config.providerApiKey}
+              onChange={(e) => onChange({ ...config, providerApiKey: e.target.value })} />
+          </label>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function RunConfig() {
   const navigate = useNavigate();
   const { data: personas, loading: personasLoading } = useApi<PersonaSummary[]>("/personas");
-  const { data: prompts } = useApi<PromptSummary[]>("/prompts");
+  const { data: manifest } = useApi<Manifest>("/prompts");
 
   const [selectedPersonas, setSelectedPersonas] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<"full-pipeline" | "build-only">("full-pipeline");
-  const [promptSource, setPromptSource] = useState("production");
+  const [promptConfigA, setPromptConfigA] = useState<PromptConfigState | null>(null);
   const [abEnabled, setAbEnabled] = useState(false);
-  const [promptSourceB, setPromptSourceB] = useState("");
+  const [promptConfigB, setPromptConfigB] = useState<PromptConfigState | null>(null);
   const [maxTurns, setMaxTurns] = useState(60);
   const [skipEvaluation, setSkipEvaluation] = useState(false);
   const [skipBuild, setSkipBuild] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+
+  const configA = promptConfigA ?? defaultPromptConfig(manifest);
+  const configB = promptConfigB ?? defaultPromptConfig(manifest);
 
   const togglePersona = (id: string) => {
     const next = new Set(selectedPersonas);
@@ -34,14 +154,24 @@ export function RunConfig() {
 
   const deselectAll = () => setSelectedPersonas(new Set());
 
+  const buildPromptConfig = (c: PromptConfigState) => ({
+    designSystem: c.designSystem,
+    generatePage: c.generatePage,
+    modelProvider: c.modelProvider,
+    modelName: c.modelName,
+    temperature: c.temperature,
+    maxTokens: c.maxTokens ? Number(c.maxTokens) : undefined,
+    providerApiKey: c.providerApiKey || undefined,
+  });
+
   const startRun = async () => {
     setIsStarting(true);
     try {
       const result = await postApi<{ runId: string }>("/runs", {
         mode,
         personas: [...selectedPersonas],
-        promptSource,
-        promptSourceB: abEnabled ? promptSourceB : undefined,
+        promptConfig: buildPromptConfig(configA),
+        promptConfigB: abEnabled ? buildPromptConfig(configB) : undefined,
         maxTurns,
         skipEvaluation,
         skipBuild,
@@ -94,22 +224,14 @@ export function RunConfig() {
       </section>
 
       <section className="config-section card">
-        <h3>Prompt</h3>
-        <select value={promptSource} onChange={(e) => setPromptSource(e.target.value)}>
-          {prompts?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        <h3>Build Prompts</h3>
+        <PromptConfigPanel config={configA} onChange={setPromptConfigA} manifest={manifest} label="" />
         <label className="ab-toggle">
           <input type="checkbox" checked={abEnabled} onChange={(e) => setAbEnabled(e.target.checked)} />
           Enable A/B Mode
         </label>
         {abEnabled && (
-          <div className="ab-prompt-b">
-            <span>Prompt B:</span>
-            <select value={promptSourceB} onChange={(e) => setPromptSourceB(e.target.value)}>
-              <option value="">Select Prompt B</option>
-              {prompts?.filter((p) => p.id !== promptSource).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
+          <PromptConfigPanel config={configB} onChange={setPromptConfigB} manifest={manifest} label="Variant B" />
         )}
       </section>
 
