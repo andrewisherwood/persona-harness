@@ -7,8 +7,9 @@ import { createPromptsRouter } from "./routes/prompts.js";
 import { createRunsRouter } from "./routes/runs.js";
 import { configRouter } from "./routes/config.js";
 import { costRouter } from "./routes/cost.js";
+import { createResearchRouter } from "./routes/research.js";
 import { Orchestrator } from "./engine/orchestrator.js";
-import { buildSupabaseConfig, generateAuthToken, validateConfig } from "./engine/supabase-client.js";
+import { buildSupabaseConfig, createServiceClient, generateAuthToken, validateConfig } from "./engine/supabase-client.js";
 
 const REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "TEST_TENANT_ID", "TEST_USER_ID", "BIRTHBUILD_ROOT"];
 
@@ -47,6 +48,13 @@ export function createApp(): Express {
   app.use("/api/runs", createRunsRouter(orchestrator));
   app.use("/api/config", configRouter);
   app.use("/api/cost", costRouter);
+
+  // Research routes require a valid Supabase URL; skip registration when
+  // env vars are missing (e.g. during E2E smoke tests without credentials).
+  if (supabaseConfig.supabaseUrl && supabaseConfig.serviceRoleKey) {
+    const researchClient = createServiceClient(supabaseConfig);
+    app.use("/api/research", createResearchRouter(researchClient));
+  }
 
   return app;
 }
