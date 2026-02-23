@@ -9,9 +9,12 @@
  * No enforced CSS selectors. No HTML templates. No post-processing CSS strip.
  *
  * Usage:
- *   npx tsx scripts/creative-build.ts                    # defaults to claude-opus-4-6
+ *   npx tsx scripts/creative-build.ts                         # defaults to claude-opus-4-6
  *   npx tsx scripts/creative-build.ts claude-sonnet-4-5-20250929
- *   npx tsx scripts/creative-build.ts gpt-5.2            # requires OPENAI_API_KEY
+ *   npx tsx scripts/creative-build.ts gpt-5.2                 # requires OPENAI_API_KEY
+ *   npx tsx scripts/creative-build.ts --model claude-opus-4-6 --palette ocean_calm
+ *   npx tsx scripts/creative-build.ts --no-db                 # skip database writes
+ *   npx tsx scripts/creative-build.ts --temperature 0.9 --feeling "warm and inviting"
  *
  * Output is saved locally for inspection. Deploy with:
  *   npx tsx scripts/creative-deploy.ts <output-dir>
@@ -21,18 +24,80 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import Anthropic from "@anthropic-ai/sdk";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { STOCK_PHOTOS } from "../src/server/engine/supabase-client.js";
+import { STOCK_PHOTOS, buildSupabaseConfig, createServiceClient } from "../src/server/engine/supabase-client.js";
+import { insertCreativeRun, updateCreativeRunStatus, insertCreativeRunPage } from "../src/server/engine/creative-run-db.js";
+import { extractPageMetrics } from "../src/server/engine/html-metrics.js";
+import type { CreativeRunInsert, CreativeRunPageInsert } from "../src/server/engine/creative-run-types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// ---------------------------------------------------------------------------
+// CLI argument parsing
+// ---------------------------------------------------------------------------
+
+interface CliArgs {
+  model: string;
+  palette: string | null;
+  typography: string | null;
+  style: string | null;
+  feeling: string | null;
+  temperature: number;
+  noDb: boolean;
+}
+
+function parseArgs(argv: string[]): CliArgs {
+  const args = argv.slice(2);
+  const result: CliArgs = {
+    model: "claude-opus-4-6",
+    palette: null,
+    typography: null,
+    style: null,
+    feeling: null,
+    temperature: 0.7,
+    noDb: false,
+  };
+
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i]!;
+
+    if (arg === "--model") {
+      result.model = args[++i] ?? result.model;
+    } else if (arg === "--palette") {
+      result.palette = args[++i] ?? null;
+    } else if (arg === "--typography") {
+      result.typography = args[++i] ?? null;
+    } else if (arg === "--style") {
+      result.style = args[++i] ?? null;
+    } else if (arg === "--feeling") {
+      result.feeling = args[++i] ?? null;
+    } else if (arg === "--temperature") {
+      const val = parseFloat(args[++i] ?? "");
+      if (!isNaN(val)) result.temperature = val;
+    } else if (arg === "--no-db") {
+      result.noDb = true;
+    } else if (!arg.startsWith("--")) {
+      // Bare first arg = model name (backward compat)
+      result.model = arg;
+    }
+    i++;
+  }
+
+  return result;
+}
+
+const cliArgs = parseArgs(process.argv);
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
-const MODEL = process.argv[2] || "claude-opus-4-6";
+const MODEL = cliArgs.model;
+const TEMPERATURE = cliArgs.temperature;
 const MAX_TOKENS = 16_384;
 
 const SPEC_PATH = join(
@@ -84,6 +149,12 @@ interface SiteSpec {
 
 const spec = JSON.parse(readFileSync(SPEC_PATH, "utf-8")) as SiteSpec;
 
+// Apply CLI overrides to spec
+if (cliArgs.palette !== null) spec.palette = cliArgs.palette;
+if (cliArgs.typography !== null) spec.typography = cliArgs.typography;
+if (cliArgs.style !== null) spec.style = cliArgs.style;
+if (cliArgs.feeling !== null) spec.brand_feeling = cliArgs.feeling;
+
 const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "") ?? "";
 const storageBase = `${supabaseUrl}/storage/v1/object/public/photos`;
 const photos = STOCK_PHOTOS.map((p) => ({
@@ -96,6 +167,17 @@ const colours = PALETTES[spec.palette] ?? PALETTES["sage_sand"]!;
 const typo = TYPOGRAPHY_PRESETS[spec.typography] ?? TYPOGRAPHY_PRESETS["modern"]!;
 const headingFont = spec.font_heading ?? typo.heading;
 const bodyFont = spec.font_body ?? typo.body;
+
+// ---------------------------------------------------------------------------
+// Model provider detection
+// ---------------------------------------------------------------------------
+
+function detectModelProvider(modelName: string): string {
+  if (modelName.startsWith("claude")) return "anthropic";
+  if (modelName.startsWith("gpt")) return "openai";
+  if (modelName.startsWith("gemini")) return "google";
+  return "unknown";
+}
 
 // ---------------------------------------------------------------------------
 // Prompt builders
@@ -305,7 +387,7 @@ const PAGE_HTML_TOOL: Anthropic.Tool = {
 // API call helpers
 // ---------------------------------------------------------------------------
 
-const client = new Anthropic();
+const anthropicClient = new Anthropic();
 
 interface DesignSystem {
   css: string;
@@ -314,22 +396,40 @@ interface DesignSystem {
   wordmark_svg: string;
 }
 
-async function generateDesignSystem(): Promise<DesignSystem> {
+/** Token + timing stats returned alongside the generated content. */
+interface GenerationStats {
+  inputTokens: number;
+  outputTokens: number;
+  elapsedS: number;
+}
+
+interface DesignSystemResult {
+  designSystem: DesignSystem;
+  stats: GenerationStats;
+}
+
+interface PageResult {
+  html: string;
+  stats: GenerationStats;
+}
+
+async function generateDesignSystem(): Promise<DesignSystemResult> {
   console.log(`\n[design-system] Calling ${MODEL}...`);
   const start = Date.now();
 
-  const response = await client.messages.create({
+  const response = await anthropicClient.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    temperature: 0.7,
+    temperature: TEMPERATURE,
     system: "You are a world-class web designer. Return your work exclusively via the design_system tool.",
     messages: [{ role: "user", content: buildDesignSystemPrompt() }],
     tools: [DESIGN_SYSTEM_TOOL],
     tool_choice: { type: "tool", name: "design_system" },
   });
 
-  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-  console.log(`[design-system] Done in ${elapsed}s — ${response.usage.input_tokens} in / ${response.usage.output_tokens} out`);
+  const elapsedS = (Date.now() - start) / 1000;
+  const { input_tokens: inputTokens, output_tokens: outputTokens } = response.usage;
+  console.log(`[design-system] Done in ${elapsedS.toFixed(1)}s — ${inputTokens} in / ${outputTokens} out`);
 
   const toolBlock = response.content.find((b) => b.type === "tool_use" && b.name === "design_system");
   if (!toolBlock || toolBlock.type !== "tool_use") {
@@ -338,36 +438,164 @@ async function generateDesignSystem(): Promise<DesignSystem> {
 
   const input = toolBlock.input as Record<string, string>;
   return {
-    css: input.css ?? "",
-    nav_html: input.nav_html ?? "",
-    footer_html: input.footer_html ?? "",
-    wordmark_svg: input.wordmark_svg ?? "",
+    designSystem: {
+      css: input.css ?? "",
+      nav_html: input.nav_html ?? "",
+      footer_html: input.footer_html ?? "",
+      wordmark_svg: input.wordmark_svg ?? "",
+    },
+    stats: { inputTokens, outputTokens, elapsedS },
   };
 }
 
-async function generatePage(page: string, ds: DesignSystem): Promise<string> {
+async function generatePage(page: string, ds: DesignSystem): Promise<PageResult> {
   console.log(`[${page}] Calling ${MODEL}...`);
   const start = Date.now();
 
-  const response = await client.messages.create({
+  const response = await anthropicClient.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    temperature: 0.7,
+    temperature: TEMPERATURE,
     system: "You are a world-class web designer. Return your work exclusively via the page_html tool.",
     messages: [{ role: "user", content: buildPagePrompt(page, ds.css, ds.nav_html, ds.footer_html) }],
     tools: [PAGE_HTML_TOOL],
     tool_choice: { type: "tool", name: "page_html" },
   });
 
-  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-  console.log(`[${page}] Done in ${elapsed}s — ${response.usage.input_tokens} in / ${response.usage.output_tokens} out`);
+  const elapsedS = (Date.now() - start) / 1000;
+  const { input_tokens: inputTokens, output_tokens: outputTokens } = response.usage;
+  console.log(`[${page}] Done in ${elapsedS.toFixed(1)}s — ${inputTokens} in / ${outputTokens} out`);
 
   const toolBlock = response.content.find((b) => b.type === "tool_use" && b.name === "page_html");
   if (!toolBlock || toolBlock.type !== "tool_use") {
     throw new Error(`Model did not return page_html tool call for ${page}. Stop reason: ${response.stop_reason}`);
   }
 
-  return (toolBlock.input as Record<string, string>).html ?? "";
+  return {
+    html: (toolBlock.input as Record<string, string>).html ?? "",
+    stats: { inputTokens, outputTokens, elapsedS },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cost estimation
+// ---------------------------------------------------------------------------
+
+/** Per-million-token rates: [input, output] in USD */
+const MODEL_RATES: Record<string, [number, number]> = {
+  "claude-opus-4-6": [15, 75],
+  "claude-sonnet-4-5-20250929": [3, 15],
+  "claude-haiku-4-5-20250929": [0.8, 4],
+  "gpt-5.2": [2.5, 10],
+  "gpt-5.2-pro": [5, 20],
+  "gpt-5-mini": [0.3, 1.25],
+};
+
+function estimateCost(inputTokens: number, outputTokens: number): number {
+  const rates = MODEL_RATES[MODEL] ?? [3, 15]; // default to Sonnet rates
+  return (inputTokens * rates[0] + outputTokens * rates[1]) / 1_000_000;
+}
+
+// ---------------------------------------------------------------------------
+// DB helpers
+// ---------------------------------------------------------------------------
+
+interface DbContext {
+  client: SupabaseClient;
+  runId: string;
+}
+
+async function initDb(): Promise<DbContext | null> {
+  if (cliArgs.noDb) {
+    console.log("[db] Skipped (--no-db flag)");
+    return null;
+  }
+
+  const config = buildSupabaseConfig(process.env as Record<string, string | undefined>);
+  if (!config.supabaseUrl || !config.serviceRoleKey) {
+    console.log("[db] Skipped (missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)");
+    return null;
+  }
+
+  const client = createServiceClient(config);
+
+  const runInsert: CreativeRunInsert = {
+    model_provider: detectModelProvider(MODEL),
+    model_name: MODEL,
+    temperature: TEMPERATURE,
+    max_tokens: MAX_TOKENS,
+    palette: spec.palette,
+    typography: spec.typography,
+    style: spec.style,
+    brand_feeling: spec.brand_feeling,
+    site_spec_name: spec.business_name,
+    site_spec_snapshot: spec as unknown as Record<string, unknown>,
+    status: "generating",
+  };
+
+  const runId = await insertCreativeRun(client, runInsert);
+  console.log(`[db] Creative run created: ${runId}`);
+  return { client, runId };
+}
+
+async function recordDesignSystemPage(
+  db: DbContext,
+  css: string,
+  stats: GenerationStats,
+): Promise<void> {
+  const pageInsert: CreativeRunPageInsert = {
+    run_id: db.runId,
+    page_name: "design_system",
+    css,
+    input_tokens: stats.inputTokens,
+    output_tokens: stats.outputTokens,
+    generation_time_s: Math.round(stats.elapsedS * 10) / 10,
+  };
+  await insertCreativeRunPage(db.client, pageInsert);
+}
+
+async function recordHtmlPage(
+  db: DbContext,
+  pageName: string,
+  html: string,
+  stats: GenerationStats,
+): Promise<void> {
+  const metrics = extractPageMetrics(html);
+  const pageInsert: CreativeRunPageInsert = {
+    run_id: db.runId,
+    page_name: pageName,
+    html,
+    input_tokens: stats.inputTokens,
+    output_tokens: stats.outputTokens,
+    generation_time_s: Math.round(stats.elapsedS * 10) / 10,
+    img_count: metrics.imgCount,
+    heading_count: metrics.headingCount,
+    landmark_count: metrics.landmarkCount,
+    link_count: metrics.linkCount,
+    schema_org_present: metrics.schemaOrgPresent,
+  };
+  await insertCreativeRunPage(db.client, pageInsert);
+}
+
+async function recordRunComplete(
+  db: DbContext,
+  totalInputTokens: number,
+  totalOutputTokens: number,
+  totalTimeS: number,
+  estimatedCostUsd: number,
+): Promise<void> {
+  await updateCreativeRunStatus(db.client, db.runId, "complete", {
+    total_input_tokens: totalInputTokens,
+    total_output_tokens: totalOutputTokens,
+    total_time_s: Math.round(totalTimeS * 10) / 10,
+    estimated_cost_usd: Math.round(estimatedCostUsd * 1_000_000) / 1_000_000,
+  });
+}
+
+async function recordRunError(db: DbContext, errorMessage: string): Promise<void> {
+  await updateCreativeRunStatus(db.client, db.runId, "error", {
+    error_message: errorMessage,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -375,41 +603,106 @@ async function generatePage(page: string, ds: DesignSystem): Promise<string> {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  console.log(`Creative build: ${MODEL}`);
+  console.log(`Creative build: ${MODEL} (temperature: ${TEMPERATURE})`);
   console.log(`Spec: ${spec.business_name} (${spec.pages.length} pages)`);
   console.log(`Palette: ${spec.palette} | Typography: ${spec.typography} | Style: ${spec.style} | Feeling: ${spec.brand_feeling}`);
   console.log(`Photos: ${photos.length}`);
 
-  // Step 1: Design system
-  const ds = await generateDesignSystem();
+  // Initialise DB (null if --no-db or missing credentials)
+  const db = await initDb();
 
-  // Step 2: Pages (sequential to avoid rate limits)
-  const files: Array<{ path: string; content: string }> = [];
-  files.push({ path: "styles.css", content: ds.css });
+  const mainStart = Date.now();
 
-  for (const page of spec.pages) {
-    const html = await generatePage(page, ds);
-    files.push({ path: `${page}.html`, content: html });
+  try {
+    // Step 1: Design system
+    const dsResult = await generateDesignSystem();
+    const ds = dsResult.designSystem;
+
+    if (db) {
+      await recordDesignSystemPage(db, ds.css, dsResult.stats);
+    }
+
+    // Step 2: Pages (sequential to avoid rate limits)
+    const files: Array<{ path: string; content: string }> = [];
+    files.push({ path: "styles.css", content: ds.css });
+
+    let totalInputTokens = dsResult.stats.inputTokens;
+    let totalOutputTokens = dsResult.stats.outputTokens;
+
+    for (const page of spec.pages) {
+      const pageResult = await generatePage(page, ds);
+      files.push({ path: `${page}.html`, content: pageResult.html });
+
+      totalInputTokens += pageResult.stats.inputTokens;
+      totalOutputTokens += pageResult.stats.outputTokens;
+
+      if (db) {
+        await recordHtmlPage(db, page, pageResult.html, pageResult.stats);
+      }
+    }
+
+    const totalTimeS = (Date.now() - mainStart) / 1000;
+    const totalCost = estimateCost(totalInputTokens, totalOutputTokens);
+
+    // Step 3: Save locally
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const outDir = join(__dirname, `../runs/creative-${MODEL}-${timestamp}`);
+    mkdirSync(outDir, { recursive: true });
+
+    writeFileSync(join(outDir, "design-system.json"), JSON.stringify(ds, null, 2));
+    for (const f of files) {
+      writeFileSync(join(outDir, f.path), f.content);
+    }
+
+    // Manifest
+    const manifest = {
+      model: MODEL,
+      temperature: TEMPERATURE,
+      max_tokens: MAX_TOKENS,
+      run_id: db?.runId ?? null,
+      spec_name: spec.business_name,
+      palette: spec.palette,
+      typography: spec.typography,
+      style: spec.style,
+      brand_feeling: spec.brand_feeling,
+      pages: spec.pages,
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      total_time_s: Math.round(totalTimeS * 10) / 10,
+      estimated_cost_usd: Math.round(totalCost * 1_000_000) / 1_000_000,
+      timestamp: new Date().toISOString(),
+    };
+    writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+
+    // Update DB with totals
+    if (db) {
+      await recordRunComplete(db, totalInputTokens, totalOutputTokens, totalTimeS, totalCost);
+      console.log(`\n[db] Run ${db.runId} marked complete`);
+    }
+
+    // Summary
+    console.log(`\nFiles saved to: ${outDir}`);
+    console.log("Files:");
+    for (const f of files) {
+      console.log(`  ${f.path} (${(f.content.length / 1024).toFixed(1)}KB)`);
+    }
+    console.log(`\nTokens: ${totalInputTokens} in / ${totalOutputTokens} out`);
+    console.log(`Cost: $${totalCost.toFixed(4)}`);
+    console.log(`Time: ${totalTimeS.toFixed(1)}s`);
+    if (db) {
+      console.log(`DB run ID: ${db.runId}`);
+    }
+    console.log(`\nInspect locally, then deploy with:`);
+    console.log(`  npx tsx scripts/creative-deploy.ts ${outDir}`);
+  } catch (err) {
+    if (db) {
+      const message = err instanceof Error ? err.message : String(err);
+      await recordRunError(db, message).catch((dbErr) => {
+        console.error("[db] Failed to record error:", dbErr);
+      });
+    }
+    throw err;
   }
-
-  // Step 3: Save locally
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const outDir = join(__dirname, `../runs/creative-${MODEL}-${timestamp}`);
-  mkdirSync(outDir, { recursive: true });
-
-  writeFileSync(join(outDir, "design-system.json"), JSON.stringify(ds, null, 2));
-  for (const f of files) {
-    writeFileSync(join(outDir, f.path), f.content);
-  }
-
-  // Summary
-  console.log(`\nFiles saved to: ${outDir}`);
-  console.log("Files:");
-  for (const f of files) {
-    console.log(`  ${f.path} (${(f.content.length / 1024).toFixed(1)}KB)`);
-  }
-  console.log(`\nInspect locally, then deploy with:`);
-  console.log(`  npx tsx scripts/creative-deploy.ts ${outDir}`);
 }
 
 main().catch((err) => {
