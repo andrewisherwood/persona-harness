@@ -10,14 +10,14 @@ interface StockPhoto {
 const USER_PHOTOS_PATH = "photos/23099152-2ebe-4040-9a45-9a2d0a8fb1c6";
 
 export const STOCK_PHOTOS: StockPhoto[] = [
-  { storage_path: `${USER_PHOTOS_PATH}/headshot-1771717626849.png`, purpose: "headshot", alt_text: "Dina", sort_order: 0 },
-  { storage_path: `${USER_PHOTOS_PATH}/hero-1771717638124.png`, purpose: "hero", alt_text: "Supporting you", sort_order: 1 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717642408.png`, purpose: "gallery", alt_text: "Antenatal Consultation", sort_order: 2 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717645405.png`, purpose: "gallery", alt_text: "Hospital Birth", sort_order: 3 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717663154.png`, purpose: "gallery", alt_text: "Home Birth", sort_order: 4 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717670422.png`, purpose: "gallery", alt_text: "Holding hands", sort_order: 5 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717674293.png`, purpose: "gallery", alt_text: "Hypnobirthing Class", sort_order: 6 },
-  { storage_path: `${USER_PHOTOS_PATH}/gallery-1771717691089.png`, purpose: "gallery", alt_text: "Preparations", sort_order: 7 },
+  { storage_path: `${USER_PHOTOS_PATH}/headshot.png`, purpose: "headshot", alt_text: "Dina", sort_order: 0 },
+  { storage_path: `${USER_PHOTOS_PATH}/hero.png`, purpose: "hero", alt_text: "Supporting you", sort_order: 1 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-antenatal-consultation.png`, purpose: "gallery", alt_text: "Antenatal Consultation", sort_order: 2 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-hospitalbirth.png`, purpose: "gallery", alt_text: "Hospital Birth", sort_order: 3 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-homebirth.png`, purpose: "gallery", alt_text: "Home Birth", sort_order: 4 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-holding-hands.png`, purpose: "gallery", alt_text: "Holding hands", sort_order: 5 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-hypnobirthing-class.png`, purpose: "gallery", alt_text: "Hypnobirthing Class", sort_order: 6 },
+  { storage_path: `${USER_PHOTOS_PATH}/gallery-preparations.png`, purpose: "gallery", alt_text: "Preparations", sort_order: 7 },
 ];
 
 export async function seedStockPhotos(

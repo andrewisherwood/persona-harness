@@ -62,7 +62,8 @@ persona-harness/
 ├── tests/                    # Vitest test files (139 tests, 16 files)
 ├── docs/
 │   ├── edge-function-contracts.md  # Production edge function HTTP contracts
-│   └── plans/                      # Design + implementation plans
+│   ├── plans/                      # Design + implementation plans
+│   └── research/                   # Multi-model comparison research
 ├── vite.config.ts            # Vite config with Express proxy
 ├── index.html                # Vite HTML entry point
 └── harness-config.json       # Runtime config (budget, default models)
@@ -103,6 +104,7 @@ Required for dashboard runs (in `.env`):
 - `API_PORT` — Express server port (default: 3001)
 - `BIRTHBUILD_ROOT` — Path to BirthBuild project root (for reading/writing prompt templates)
 - `AUTH_TOKEN` — (optional) Manual override; auto-generated from TEST_USER_ID if omitted
+- `OPENAI_API_KEY` — (optional) OpenAI API key for multi-model A/B testing; auto-injected when provider is "openai"
 
 ## API Endpoints
 
@@ -168,12 +170,37 @@ See `docs/edge-function-contracts.md` for full details. Key points:
 - Progress `step: "error"` is remapped to avoid conflicting with SSE error events
 - Vite proxies `/api` to Express in dev mode
 
+### Multi-Model A/B Testing
+
+The dashboard supports swapping the LLM backend for site generation via `promptConfig` in the run config. The `model-client.ts` in BirthBuild normalises Anthropic and OpenAI APIs into a common interface.
+
+**Supported providers:** Anthropic (Claude Sonnet 4.5, Opus 4.6, Haiku 4.5), OpenAI (GPT-5.2, GPT-5.2 Pro, GPT-5 Mini)
+
+**How it works:** `promptConfig` flows from RunConfig UI → runs route → orchestrator → EdgeFunctionClient → edge functions. The orchestrator auto-injects `OPENAI_API_KEY` from `.env` when the provider is "openai".
+
+**POST /api/runs body for build-only A/B test:**
+```json
+{
+  "personaId": "detailed-dina",
+  "vertical": "birthbuild",
+  "mode": "build-only",
+  "promptConfig": {
+    "modelProvider": "anthropic",
+    "modelName": "claude-opus-4-6",
+    "temperature": 0.7,
+    "maxTokens": 8192
+  }
+}
+```
+
+Note: The `mode` field must be `"build-only"` (not `buildOnly: true`). Getting this wrong triggers a full-pipeline run.
+
 ### Three LLM Roles
 
 | Role | Model | Purpose |
 |------|-------|---------|
 | Persona Simulator | claude-sonnet-4-5-20250929 | Acts as the user |
-| Target Chatbot | Production edge function | System under test |
+| Target Chatbot | Production edge function | System under test (model swappable via promptConfig) |
 | Judge Evaluator | claude-sonnet-4-5-20250929 | Scores conversations |
 
 ### Cost Tracking
@@ -224,8 +251,13 @@ The harness enables rapid iteration on BirthBuild's edge function prompts via **
 |------|---------|
 | `supabase/functions/_shared/prompts/design-system/v1-structured.md` | Template prompt for design system CSS generation |
 | `supabase/functions/generate-design-system/index.ts` | Hardcoded prompt + `REQUIRED_CSS_SELECTORS` validation |
-| `supabase/functions/generate-page/index.ts` | Per-page prompt requirements (about, services, etc.) |
+| `supabase/functions/generate-page/index.ts` | Per-page prompt with photo injection via `buildSystemPrompt()` |
 | `supabase/functions/_shared/sanitise-html.ts` | CSS sanitiser — `enforceDesignSystemCss()` |
+| `supabase/functions/_shared/model-client.ts` | Multi-provider LLM client (Anthropic + OpenAI) |
+
+### Page Generation: No Template Override
+
+`generate-page` always uses the hardcoded `buildSystemPrompt()` — it does NOT support `prompt_config.system_prompt` template overrides. This is because the page prompt is tightly coupled to runtime data: photo URLs, conditional hero/card markup, and page-specific instructions are injected dynamically. The `resolveTemplate()` path was removed after it was found to bypass photo injection entirely.
 
 ### Critical Constraint: `enforceDesignSystemCss()`
 
@@ -233,7 +265,48 @@ The harness enables rapid iteration on BirthBuild's edge function prompts via **
 
 If a page layout looks broken (flat, stacked, unstyled), the first thing to check is whether the required CSS selectors are in the design system prompt and the `REQUIRED_CSS_SELECTORS` validation array.
 
+## Multi-Model Research
+
+Active research comparing site generation quality across LLM providers. See `docs/research/2026-02-23-multi-model-site-generation.md` for full findings.
+
+### Two Build Modes
+
+1. **Constrained** (edge functions) — Enforced CSS selectors, HTML templates, `enforceDesignSystemCss()`. Predictable output, suitable for Sonnet at scale. ~$0.30/site, ~2 min.
+
+2. **Creative** (`scripts/creative-build.ts`) — Calls Anthropic API directly. Client's palette/typography/style/feeling as constraints, full creative freedom on layout/components/hierarchy. Opus produces dramatically superior designs. ~$6.55/site, ~11 min.
+
+### Creative Build Scripts
+
+```bash
+npx tsx scripts/creative-build.ts claude-opus-4-6    # generate locally
+# inspect output in runs/creative-*/
+npx tsx scripts/creative-deploy.ts runs/creative-*   # deploy to Netlify
+```
+
+Output includes HTML, CSS, accessibility trees (Playwright), full-page screenshots, and a manifest with token counts/costs.
+
+### Key Findings
+
+- **Hypothesis proven:** Opus 4.6 with creative freedom produces visually stunning sites that far exceed constrained builds
+- The creative prompt honours the client's design choices (colours, fonts, style, feeling) while giving the model freedom over layout and composition
+- GPT-5.2 requires `max_completion_tokens` (not `max_tokens`) — fixed in `model-client.ts`
+- GPT-5.2 copywriting arguably warmer/better; structural compliance equal
+- Edge function rate limit: 20 generate-page requests per hour per user
+
+### Live Sites
+
+| Build | Model | URL |
+|-------|-------|-----|
+| Constrained baseline | Sonnet 4.5 | `birthbuild-dina-hart-1joo.netlify.app` |
+| Constrained | GPT-5.2 | `birthbuild-dina-hart-tlb8.netlify.app` |
+| **Creative** | **Opus 4.6** | **`birthbuild-dina-hart-63wr.netlify.app`** |
+
+### Stock Photos
+
+8 stock photos for Dina Hart in `stock_photos/Dina/` and uploaded to Supabase storage. The `STOCK_PHOTOS` array in `supabase-client.ts` has the correct clean filenames.
+
 ## Known Limitations
 
 - Pre-existing CLI runs use timestamp-named directories; new dashboard runs use UUID directories. Both formats are supported by the cost aggregator and run listing.
 - Site generation is self-contained in the harness (ported from BirthBuild). It does not include photos, Schema.org JSON-LD, or the advanced design editor's custom fonts/spacing. These are cosmetic differences only.
+- Only `detailed-dina` has a saved site spec for build-only mode. Other personas (`nervous-nora`, `sparse-sarah`) require a full-pipeline run first to capture their spec.

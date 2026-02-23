@@ -2,7 +2,7 @@
 
 **Date:** 23 February 2026
 **Author:** Andrew Isherwood, Dopamine Laboratory
-**Status:** In progress — Claude Sonnet 4.5 vs GPT-5.2 complete; Opus 4.6 and Gemini pending
+**Status:** In progress — Claude Sonnet 4.5 vs GPT-5.2 constrained comparison complete; Opus 4.6 creative build complete (hypothesis proven); Gemini pending
 
 ---
 
@@ -183,26 +183,62 @@ Both models reliably:
 
 ---
 
-## 6. Next Steps
+## 6. Confounding Variable: Template Path Bug
 
-### 6.1 Pending Model Tests
+### 6.1 Discovery
+
+During Opus 4.6 testing, an unexpected finding invalidated part of the image analysis. When the A/B testing harness sends a `prompt_config.system_prompt` (which it does for every harness-initiated build), the page generation edge function was taking a **template resolution path** that bypasses photo injection entirely. The production code path (`buildSystemPrompt()`) injects photo URLs, conditional hero markup, and page-specific image instructions into the prompt. The template path (`resolveTemplate()`) resolves `{{variable}}` placeholders but never injects photos because the variable map didn't include them.
+
+This means:
+
+1. **The original Claude Sonnet 4.5 baseline** (site `1joo`) was generated before the prompt management feature was wired up, so it used the production code path and received photos normally.
+2. **All subsequent builds** (GPT-5.2 attempts, Opus 4.6, and later Sonnet 4.5 rebuilds) went through the template path and received **zero photo URLs in the prompt**.
+3. **GPT-5.2's image avoidance** may still be a real model behaviour, but the evidence is now confounded — the model never received the photos in its prompt for any of the tested builds.
+
+### 6.2 The Fix
+
+The page generation function was patched to always use `buildSystemPrompt()`, which includes photo injection, page-specific requirements, and conditional logic. Template overrides are not supported for page generation because the prompt is too tightly coupled to runtime data (photos, conditional sections, page-specific instructions).
+
+The design system generation function is unaffected — it doesn't handle photos and works correctly with both code paths.
+
+### 6.3 Implications
+
+All model comparison results in sections 3.2 (Visual Richness) and 4.1 (The Image Problem) must be retested with the fix deployed. The structural compliance (3.1), content quality (3.3), and technical differences (3.4) remain valid because they don't depend on photo injection.
+
+The GPT-5.2 image hypothesis should be considered **unproven** until retested. The prompt strengthening iterations (section 4.1) were applied to the wrong code path and never reached the model.
+
+---
+
+## 7. Next Steps
+
+### 7.1 Retest All Models With Photo Fix
+
+Priority retests after the template path fix:
+
+| Model | Provider | Purpose |
+|-------|----------|---------|
+| Claude Sonnet 4.5 | Anthropic | Re-establish baseline with photos confirmed in prompt |
+| GPT-5.2 | OpenAI | Determine whether image avoidance is a real model behaviour or was caused by missing photos |
+| Claude Opus 4.6 | Anthropic | First valid test of Opus for site generation |
+
+### 7.2 Pending Model Tests
 
 | Model | Provider | Hypothesis |
 |-------|----------|-----------|
 | Claude Opus 4.6 | Anthropic | Higher quality at higher cost — does the premium justify itself for site generation? |
 | Gemini | Google | Third provider comparison — does the image embedding issue repeat? |
 
-### 6.2 Post-Processing Image Injection
+### 7.3 Post-Processing Image Injection
 
 If GPT-5.2's image avoidance is confirmed as a persistent model behaviour (not a transient issue), a programmatic image injection step could be built. This would detect `.hero--text-only` and plain `.card` elements in the output HTML and replace them with their photo-bearing equivalents using the known photo URLs. This would allow GPT-5.2's superior copywriting to be combined with programmatic visual richness.
 
-### 6.3 Prompt Simplification
+### 7.4 Prompt Simplification
 
 The current design system prompt is ~120 lines with detailed per-selector requirements. A simplification experiment would test whether models can produce equivalent output from a shorter, less prescriptive prompt — and whether the answer differs by model.
 
 ---
 
-## 7. Live Comparison URLs
+## 8. Live Comparison URLs
 
 | Model | URL |
 |-------|-----|
@@ -212,7 +248,88 @@ The current design system prompt is ~120 lines with detailed per-selector requir
 | GPT-5.2 (attempt 3, strengthened prompt) | https://birthbuild-dina-hart-ebo1.netlify.app |
 | GPT-5.2 (attempt 4, literal HTML templates) | https://birthbuild-dina-hart-p9zv.netlify.app |
 
-All four GPT-5.2 builds contain zero `<img>` tags in `<main>`, confirming the behaviour is consistent across prompt variations.
+All four GPT-5.2 builds contain zero `<img>` tags in `<main>`. However, see section 6 — the template path bug means photos were never in the prompt for any of these builds. These results are **confounded** and must be retested.
+
+### 8.1 Post-Fix Builds
+
+| Model | URL | Photos in prompt? | Photos in output? |
+|-------|-----|-------------------|-------------------|
+| Claude Sonnet 4.5 | pending | Yes (confirmed) | TBD |
+| GPT-5.2 | pending | Yes (confirmed) | TBD |
+
+### 8.2 Creative Build (unconstrained)
+
+| Model | URL | Photos | Notes |
+|-------|-----|--------|-------|
+| Claude Opus 4.6 | https://birthbuild-dina-hart-63wr.netlify.app | 8/8 | Stunning. Hypothesis proven. |
+
+---
+
+## 9. Creative Build: Opus 4.6 Unconstrained
+
+### 9.1 The Hypothesis
+
+The constrained pipeline (enforced CSS selectors, HTML templates, `enforceDesignSystemCss()` post-processing) produces predictable, structurally correct sites but limits the model's creative expression. The hypothesis: given the same site specification but only the client's design choices as constraints (palette, typography, style, brand feeling), a more capable model can produce a visually superior site by making its own layout, component, and compositional decisions.
+
+### 9.2 Method
+
+A standalone script (`scripts/creative-build.ts`) calls the Anthropic API directly, bypassing the edge function pipeline entirely. The prompt:
+
+- Passes the full site specification as JSON
+- Specifies exact colour hex values from the client's chosen palette (`sage_sand`)
+- Specifies exact font families from the client's chosen typography (`mixed` → DM Serif Display / Inter)
+- States the client's style preference (`classic`) and brand feeling (`Reassuring`)
+- Provides all 8 stock photo URLs with alt text
+- Gives **no HTML templates, no required CSS selectors, no enforced structure**
+- Tells the model: "These are the client's choices — honour them exactly. Within these constraints you have full creative freedom."
+
+The model generates a complete CSS design system via tool call, then each page sequentially as a full HTML document referencing the shared stylesheet.
+
+### 9.3 Results
+
+**The output is dramatically superior to the constrained builds.** Opus 4.6 produced:
+
+- A 38KB CSS design system with custom properties, smooth transitions, thoughtful hover states, and responsive breakpoints — far richer than the ~9KB constrained design systems
+- Full-page layouts with creative section compositions, image grids, and visual hierarchy decisions that no constrained prompt could have specified
+- All 8 photos integrated naturally into the design
+- Proper semantic HTML with accessibility landmarks, skip links, and ARIA attributes
+- Schema.org JSON-LD structured data
+- CSS-only responsive hamburger menu
+- British English throughout
+
+**Generation stats:**
+
+| Metric | Value |
+|--------|-------|
+| Total time | ~11 minutes |
+| Total input tokens | 103,364 |
+| Total output tokens | 66,723 |
+| Estimated cost | ~$6.55 |
+| CSS size | 38.3KB |
+| Avg page HTML size | 24.7KB |
+
+**Accessibility trees captured** for all 6 pages (stored alongside the HTML in the run directory). Every page has proper landmark roles, image alt text, link labels, and heading hierarchy.
+
+### 9.4 Commercial Implications
+
+This proves a two-tier product model:
+
+1. **Standard tier (£9)** — Sonnet 4.5 with constrained prompts. Predictable, structurally correct, fast (~2 min), cheap (~$0.30/site). The design system and HTML templates provide the "taste" that Sonnet faithfully executes.
+
+2. **Premium tier** — Opus 4.6 with creative freedom. The model's own design judgment produces visually distinctive sites. Slower (~11 min), more expensive (~$6.55/site), but the quality difference is immediately visible.
+
+The next step is to extract the CSS/HTML patterns from the best Opus builds and feed them back to Sonnet as the structural constraints for each "site feeling" — effectively using Opus as the design system architect and Sonnet as the production renderer.
+
+### 9.5 Captured Artefacts
+
+| File | Description |
+|------|-------------|
+| `manifest.json` | Build metadata, token counts, costs |
+| `design-system.json` | Raw design system tool call output |
+| `styles.css` | Complete CSS design system |
+| `{page}.html` | Complete HTML for each page |
+| `{page}-accessibility.json` | Playwright accessibility tree snapshot |
+| `{page}-screenshot.png` | Full-page screenshot |
 
 ---
 
@@ -228,3 +345,8 @@ All four GPT-5.2 builds contain zero `<img>` tags in `<main>`, confirming the be
 | `enforceDesignSystemCss()` | Post-processor ensuring brand fidelity regardless of model behaviour |
 | Build-only mode | Rapid iteration (~2 min/cycle) reusing saved site specifications |
 | Automated Netlify deployment | Each build produces a unique, publicly-accessible preview URL |
+| Template path bypass fix | Page generation always uses runtime prompt builder to ensure photos are injected |
+| `creative-build.ts` | Standalone script calling Anthropic API directly with minimal creative prompts |
+| `creative-deploy.ts` | Deploys locally-generated files via `/build` edge function |
+| Accessibility tree capture | Playwright snapshots of every page for programmatic comparison |
+| Stock photo pipeline | Clean photo filenames uploaded to Supabase storage with alt text |
