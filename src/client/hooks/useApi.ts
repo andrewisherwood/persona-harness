@@ -2,12 +2,17 @@ import { useState, useEffect } from "react";
 
 const API_BASE = "/api";
 
-export function useApi<T>(path: string) {
+export function useApi<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!path) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     fetch(`${API_BASE}${path}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);

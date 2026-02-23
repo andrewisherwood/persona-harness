@@ -28,7 +28,9 @@ export function createResearchRouter(supabaseClient: SupabaseClient, supabaseCon
       const runs = await listCreativeRuns(supabaseClient);
       res.json(runs);
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[research] GET /api/research failed: ${message}`);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -66,7 +68,11 @@ export function createResearchRouter(supabaseClient: SupabaseClient, supabaseCon
 
       const data = JSON.stringify(progress);
       for (const stream of state.streams) {
-        stream.write(`event: progress\ndata: ${data}\n\n`);
+        try {
+          stream.write(`event: progress\ndata: ${data}\n\n`);
+        } catch {
+          state.streams.delete(stream);
+        }
       }
     };
 
@@ -78,10 +84,15 @@ export function createResearchRouter(supabaseClient: SupabaseClient, supabaseCon
         state.dbRunId = result.dbRunId;
         const doneData = JSON.stringify({ dbRunId: result.dbRunId, estimatedCostUsd: result.estimatedCostUsd });
         for (const stream of state.streams) {
-          stream.write(`event: done\ndata: ${doneData}\n\n`);
-          stream.end();
+          try {
+            stream.write(`event: done\ndata: ${doneData}\n\n`);
+            stream.end();
+          } catch {
+            // Client already disconnected
+          }
         }
         state.streams.clear();
+        setTimeout(() => activeRuns.delete(trackingId), 60_000);
       })
       .catch((err) => {
         const state = activeRuns.get(trackingId);
@@ -90,10 +101,15 @@ export function createResearchRouter(supabaseClient: SupabaseClient, supabaseCon
         state.error = err instanceof Error ? err.message : String(err);
         const errData = JSON.stringify({ error: state.error });
         for (const stream of state.streams) {
-          stream.write(`event: error\ndata: ${errData}\n\n`);
-          stream.end();
+          try {
+            stream.write(`event: error\ndata: ${errData}\n\n`);
+            stream.end();
+          } catch {
+            // Client already disconnected
+          }
         }
         state.streams.clear();
+        setTimeout(() => activeRuns.delete(trackingId), 60_000);
       });
   });
 
@@ -141,7 +157,12 @@ export function createResearchRouter(supabaseClient: SupabaseClient, supabaseCon
       ]);
       res.json({ run, pages });
     } catch (err) {
-      res.status(404).json({ error: err instanceof Error ? err.message : String(err) });
+      const message = err instanceof Error ? err.message : String(err);
+      const isNotFound = message.includes("not found");
+      if (!isNotFound) {
+        console.error(`[research] GET /api/research/${req.params.id} failed: ${message}`);
+      }
+      res.status(isNotFound ? 404 : 500).json({ error: message });
     }
   });
 

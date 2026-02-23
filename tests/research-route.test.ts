@@ -23,8 +23,8 @@ const mockGetCreativeRunPages = vi.mocked(getCreativeRunPages);
 function buildApp() {
   const app = express();
   app.use(express.json());
-  // Pass an empty object as SupabaseClient — the real client is mocked at the module level
-  app.use("/api/research", createResearchRouter({} as never));
+  // Pass empty objects — the real client/config are mocked at the module level
+  app.use("/api/research", createResearchRouter({} as never, {} as never));
   return app;
 }
 

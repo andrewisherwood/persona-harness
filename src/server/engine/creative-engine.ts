@@ -178,8 +178,12 @@ export function detectModelProvider(modelName: string): string {
 }
 
 export function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const rates = MODEL_RATES[model] ?? [3, 15];
-  return (inputTokens * rates[0] + outputTokens * rates[1]) / 1_000_000;
+  const rates = MODEL_RATES[model];
+  if (!rates) {
+    console.warn(`[creative-engine] No cost rates for model "${model}", falling back to Sonnet rates [$3/$15]`);
+  }
+  const effective = rates ?? [3, 15];
+  return (inputTokens * effective[0] + outputTokens * effective[1]) / 1_000_000;
 }
 
 // ---------------------------------------------------------------------------
@@ -495,7 +499,18 @@ async function generateDesignSystemOpenAI(
     throw new Error(`OpenAI model did not return design_system tool call. Finish reason: ${response.choices[0]?.finish_reason}`);
   }
 
-  const result = JSON.parse(toolCall.function.arguments) as Record<string, string>;
+  let result: Record<string, string>;
+  try {
+    result = JSON.parse(toolCall.function.arguments) as Record<string, string>;
+  } catch (parseErr) {
+    throw new Error(
+      `Failed to parse OpenAI design_system tool call arguments: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. ` +
+      `Raw (first 500 chars): ${toolCall.function.arguments.slice(0, 500)}`
+    );
+  }
+  if (!response.usage) {
+    console.warn(`[creative-engine] OpenAI design_system response missing usage data for model ${model}`);
+  }
   return {
     result,
     inputTokens: response.usage?.prompt_tokens ?? 0,
@@ -526,7 +541,18 @@ async function generatePageOpenAI(
     throw new Error(`OpenAI model did not return page_html tool call. Finish reason: ${response.choices[0]?.finish_reason}`);
   }
 
-  const parsed = JSON.parse(toolCall.function.arguments) as Record<string, string>;
+  let parsed: Record<string, string>;
+  try {
+    parsed = JSON.parse(toolCall.function.arguments) as Record<string, string>;
+  } catch (parseErr) {
+    throw new Error(
+      `Failed to parse OpenAI page_html tool call arguments: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. ` +
+      `Raw (first 500 chars): ${toolCall.function.arguments.slice(0, 500)}`
+    );
+  }
+  if (!response.usage) {
+    console.warn(`[creative-engine] OpenAI page_html response missing usage data for model ${model}`);
+  }
   return {
     html: parsed.html ?? "",
     inputTokens: response.usage?.prompt_tokens ?? 0,
@@ -728,6 +754,12 @@ export async function executeCreativeBuild(
   // Resolve design variables
   const supabaseUrl = supabaseConfig.supabaseUrl;
   const photos = buildPhotos(supabaseUrl);
+  if (!PALETTES[spec.palette]) {
+    console.warn(`[creative-engine] Unknown palette "${spec.palette}", falling back to sage_sand`);
+  }
+  if (!TYPOGRAPHY_PRESETS[spec.typography]) {
+    console.warn(`[creative-engine] Unknown typography "${spec.typography}", falling back to modern`);
+  }
   const colours = PALETTES[spec.palette] ?? PALETTES["sage_sand"]!;
   const typo = TYPOGRAPHY_PRESETS[spec.typography] ?? TYPOGRAPHY_PRESETS["modern"]!;
   const headingFont = spec.font_heading ?? typo.heading;
@@ -853,7 +885,9 @@ export async function executeCreativeBuild(
     return { dbRunId, estimatedCostUsd: totalCost };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await recordRunError(db, message).catch(() => {});
+    await recordRunError(db, message).catch((dbErr) => {
+      console.error(`[creative-engine] Failed to record error status for run ${db.runId}: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`);
+    });
     onProgress({ runId: dbRunId, step: "error", message });
     throw err;
   }

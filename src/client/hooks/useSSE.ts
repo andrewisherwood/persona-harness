@@ -15,6 +15,8 @@ export function useSSE(url: string | null, eventNames?: string[]) {
   const [doneData, setDoneData] = useState<Record<string, unknown> | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
+  const eventsKey = eventNames?.join(",") ?? "";
+
   useEffect(() => {
     if (!url) return;
 
@@ -35,8 +37,8 @@ export function useSSE(url: string | null, eventNames?: string[]) {
       try {
         const data = JSON.parse(evt.data) as Record<string, unknown>;
         setMessages((prev) => [...prev, { event: evt.type, data }]);
-      } catch {
-        // ignore parse errors
+      } catch (parseErr) {
+        console.warn(`[useSSE] Failed to parse progress event (type=${evt.type}):`, evt.data, parseErr);
       }
     };
 
@@ -49,8 +51,8 @@ export function useSSE(url: string | null, eventNames?: string[]) {
       try {
         const data = JSON.parse((evt as MessageEvent).data) as Record<string, unknown>;
         setDoneData(data);
-      } catch {
-        // no-op
+      } catch (parseErr) {
+        console.warn("[useSSE] Failed to parse done event data:", (evt as MessageEvent).data, parseErr);
       }
       setIsDone(true);
       es.close();
@@ -71,7 +73,7 @@ export function useSSE(url: string | null, eventNames?: string[]) {
     return () => {
       es.close();
     };
-  }, [url]);
+  }, [url, eventsKey]);
 
   return { messages, isConnected, isDone, error, doneData };
 }

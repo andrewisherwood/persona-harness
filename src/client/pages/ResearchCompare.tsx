@@ -38,8 +38,8 @@ export function ResearchCompare() {
   const [runIdB, setRunIdB] = useState("");
   const [selectedPage, setSelectedPage] = useState<string | null>(null);
 
-  const { data: detailA } = useApi<RunDetail>(runIdA ? `/research/${runIdA}` : "");
-  const { data: detailB } = useApi<RunDetail>(runIdB ? `/research/${runIdB}` : "");
+  const { data: detailA } = useApi<RunDetail>(runIdA ? `/research/${runIdA}` : null);
+  const { data: detailB } = useApi<RunDetail>(runIdB ? `/research/${runIdB}` : null);
 
   const completeRuns = (runs ?? []).filter((r) => r.status === "complete");
 

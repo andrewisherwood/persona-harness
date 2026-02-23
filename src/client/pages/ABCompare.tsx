@@ -10,8 +10,8 @@ export function ABCompare() {
   const { data: runs } = useApi<RunEntry[]>("/runs");
   const [runIdA, setRunIdA] = useState("");
   const [runIdB, setRunIdB] = useState("");
-  const { data: runA } = useApi<any>(runIdA ? `/runs/${runIdA}` : "");
-  const { data: runB } = useApi<any>(runIdB ? `/runs/${runIdB}` : "");
+  const { data: runA } = useApi<any>(runIdA ? `/runs/${runIdA}` : null);
+  const { data: runB } = useApi<any>(runIdB ? `/runs/${runIdB}` : null);
 
   // Get first persona from each run for comparison
   const personaIdA = runA ? Object.keys(runA.personas ?? {})[0] : null;
