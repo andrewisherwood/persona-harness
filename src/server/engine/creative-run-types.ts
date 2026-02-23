@@ -52,10 +52,10 @@ export interface CreativeRun {
   site_spec_name: string;
   site_spec_snapshot: Record<string, unknown>;
   preview_url: string | null;
-  total_input_tokens: number;
-  total_output_tokens: number;
-  total_time_s: number;
-  estimated_cost_usd: number;
+  total_input_tokens: number | null;
+  total_output_tokens: number | null;
+  total_time_s: number | null;
+  estimated_cost_usd: number | null;
   status: CreativeRunStatus;
   error_message: string | null;
 }
@@ -73,6 +73,7 @@ export interface CreativeRunInsert {
   brand_feeling: string;
   site_spec_name: string;
   site_spec_snapshot: Record<string, unknown>;
+  status?: CreativeRunStatus;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,11 +87,16 @@ export interface CreativeRunPage {
   page_name: string;
   html: string | null;
   css: string | null;
-  input_tokens: number;
-  output_tokens: number;
-  generation_time_s: number;
-  metrics: PageMetrics | null;
-  error_message: string | null;
+  accessibility_tree: Record<string, unknown> | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  generation_time_s: number | null;
+  img_count: number | null;
+  heading_count: number | null;
+  landmark_count: number | null;
+  link_count: number | null;
+  schema_org_present: boolean | null;
+  screenshot_path: string | null;
   created_at: string;
 }
 
@@ -98,11 +104,16 @@ export interface CreativeRunPage {
 export interface CreativeRunPageInsert {
   run_id: string;
   page_name: string;
-  html?: string | null;
-  css?: string | null;
+  html?: string;
+  css?: string;
+  accessibility_tree?: Record<string, unknown>;
   input_tokens?: number;
   output_tokens?: number;
   generation_time_s?: number;
-  metrics?: PageMetrics | null;
-  error_message?: string | null;
+  img_count?: number;
+  heading_count?: number;
+  landmark_count?: number;
+  link_count?: number;
+  schema_org_present?: boolean;
+  screenshot_path?: string;
 }

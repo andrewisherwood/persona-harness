@@ -53,7 +53,7 @@ export function createApp(): Express {
   // env vars are missing (e.g. during E2E smoke tests without credentials).
   if (supabaseConfig.supabaseUrl && supabaseConfig.serviceRoleKey) {
     const researchClient = createServiceClient(supabaseConfig);
-    app.use("/api/research", createResearchRouter(researchClient));
+    app.use("/api/research", createResearchRouter(researchClient, supabaseConfig));
   }
 
   return app;

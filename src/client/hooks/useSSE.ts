@@ -5,11 +5,14 @@ export interface SSEMessage {
   data: Record<string, unknown>;
 }
 
-export function useSSE(url: string | null) {
+const DEFAULT_EVENTS = ["chatting", "evaluating", "building", "deploying", "complete"];
+
+export function useSSE(url: string | null, eventNames?: string[]) {
   const [messages, setMessages] = useState<SSEMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [doneData, setDoneData] = useState<Record<string, unknown> | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -26,7 +29,7 @@ export function useSSE(url: string | null) {
       es.close();
     };
 
-    const PROGRESS_EVENTS = ["chatting", "evaluating", "building", "deploying", "complete"];
+    const progressEvents = eventNames ?? DEFAULT_EVENTS;
 
     const handleProgress = (evt: MessageEvent) => {
       try {
@@ -37,12 +40,18 @@ export function useSSE(url: string | null) {
       }
     };
 
-    for (const type of PROGRESS_EVENTS) {
+    for (const type of progressEvents) {
       es.addEventListener(type, handleProgress);
     }
 
     // Server-sent "done" event — run finished successfully
-    es.addEventListener("done", () => {
+    es.addEventListener("done", (evt: Event) => {
+      try {
+        const data = JSON.parse((evt as MessageEvent).data) as Record<string, unknown>;
+        setDoneData(data);
+      } catch {
+        // no-op
+      }
       setIsDone(true);
       es.close();
     });
@@ -64,5 +73,5 @@ export function useSSE(url: string | null) {
     };
   }, [url]);
 
-  return { messages, isConnected, isDone, error };
+  return { messages, isConnected, isDone, error, doneData };
 }

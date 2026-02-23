@@ -1,0 +1,42 @@
+.research-detail { max-width: 1100px; }
+.research-detail-header { margin-bottom: var(--space-4); }
+.back-link { font-size: var(--text-sm); color: var(--color-primary); text-decoration: none; display: inline-block; margin-bottom: var(--space-2); }
+.back-link:hover { text-decoration: underline; }
+.research-detail-vars { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+.research-summary { margin-bottom: var(--space-4); }
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); margin-bottom: var(--space-4); }
+.summary-item { display: flex; flex-direction: column; gap: var(--space-1); }
+.summary-label { font-size: var(--text-xs); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.summary-value { font-weight: 600; }
+.preview-link { display: inline-block; text-decoration: none; padding: var(--space-2) var(--space-4); background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: var(--text-sm); }
+.preview-link:hover { opacity: 0.9; }
+.page-tabs { display: flex; gap: var(--space-1); margin-bottom: var(--space-4); border-bottom: 1px solid var(--color-border); }
+.page-tab {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.page-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 600; }
+.page-tab:hover { color: var(--color-text); }
+.page-detail { display: flex; flex-direction: column; gap: var(--space-4); }
+.preview-frame-container { padding: 0; overflow: hidden; }
+.preview-frame { width: 100%; height: 600px; border: none; }
+.metrics-table table { width: 100%; border-collapse: collapse; }
+.metrics-table td { padding: var(--space-2) var(--space-3); font-size: var(--text-sm); border-bottom: 1px solid var(--color-border); }
+.metrics-table td:first-child { color: var(--color-text-muted); width: 40%; }
+.metrics-table td:last-child { font-weight: 500; }
+.toggle-btn {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
+}
+.toggle-btn:hover { background: var(--color-border); }
