@@ -7,7 +7,7 @@ Automated conversation testing harness for Dopamine Labs chatbot products. Simul
 ## Tech Stack
 
 - **Runtime:** Node.js + TypeScript (strict mode)
-- **LLM:** Anthropic Claude via `@anthropic-ai/sdk`
+- **LLM:** Anthropic Claude via `@anthropic-ai/sdk`, OpenAI via `openai`
 - **Dashboard:** React 18 + Vite 7 + React Router 7
 - **API Server:** Express 5 (embedded, proxied through Vite in dev)
 - **Production Integration:** Supabase edge functions (`/chat`, `/build`, `/publish`)
@@ -33,6 +33,10 @@ persona-harness/
 │       ├── routes/           # API routes (runs, personas, prompts, config, cost)
 │       └── engine/           # Core engine
 │           ├── orchestrator.ts   # Run execution (full-pipeline, build-only)
+│           ├── creative-engine.ts      # Creative build engine (direct API, multi-provider)
+│           ├── creative-run-db.ts      # Supabase CRUD for creative_runs + creative_run_pages
+│           ├── creative-run-types.ts   # Types for creative run DB tables
+│           ├── html-metrics.ts         # HTML metrics extraction (headings, landmarks, etc.)
 │           ├── edge-function-client.ts  # HTTP client for Supabase edge functions
 │           ├── supabase-client.ts       # Supabase config + site_spec CRUD
 │           ├── cost-tracker.ts          # Token cost accounting
@@ -56,10 +60,12 @@ persona-harness/
 ├── prompts/                  # System prompts + tool definitions
 │   └── birthbuild/           # system-prompt.md + tools.json
 ├── scripts/
+│   ├── creative-build.ts     # CLI wrapper for creative engine
+│   ├── creative-deploy.ts    # Manual Netlify deploy for creative runs
 │   └── smoke-test.ts         # Manual E2E integration test
 ├── runs/                     # Output directory (gitignored)
 ├── run.ts                    # CLI entry point
-├── tests/                    # Vitest test files (139 tests, 16 files)
+├── tests/                    # Vitest test files (193 tests, 23 files)
 ├── docs/
 │   ├── edge-function-contracts.md  # Production edge function HTTP contracts
 │   ├── plans/                      # Design + implementation plans
@@ -84,7 +90,7 @@ npm run harness -- diff <run1> <run2>
 npm run harness -- report <run-dir>
 
 # Testing
-npm test                  # Run all 139 tests
+npm test                  # Run all 193 tests
 npm run test:watch        # Watch mode
 npm run typecheck         # tsc --noEmit
 
@@ -131,6 +137,10 @@ Required for dashboard runs (in `.env`):
 | GET | `/api/runs/:id/:persona/evaluation` | Get evaluation |
 | GET | `/api/runs/:id/:persona/cost` | Get cost breakdown |
 | GET | `/api/cost/summary` | Aggregated cost summary |
+| GET | `/api/research/runs` | List creative runs |
+| GET | `/api/research/runs/:id` | Get creative run detail + pages |
+| POST | `/api/research/runs` | Start a creative build |
+| GET | `/api/research/runs/:id/stream` | SSE stream for creative build progress |
 
 ## Coding Standards
 
@@ -273,15 +283,24 @@ Active research comparing site generation quality across LLM providers. See `doc
 
 1. **Constrained** (edge functions) — Enforced CSS selectors, HTML templates, `enforceDesignSystemCss()`. Predictable output, suitable for Sonnet at scale. ~$0.30/site, ~2 min.
 
-2. **Creative** (`scripts/creative-build.ts`) — Calls Anthropic API directly. Client's palette/typography/style/feeling as constraints, full creative freedom on layout/components/hierarchy. Opus produces dramatically superior designs. ~$6.55/site, ~11 min.
+2. **Creative** (`src/server/engine/creative-engine.ts`) — Calls Anthropic or OpenAI API directly. Client's palette/typography/style/feeling as constraints, full creative freedom on layout/components/hierarchy. Opus produces dramatically superior designs. ~$6.55/site, ~11 min.
 
-### Creative Build Scripts
+### Creative Build Engine
 
+The creative build logic lives in `src/server/engine/creative-engine.ts` and is used by both the dashboard and CLI. It exports `executeCreativeBuild(config, supabaseConfig, onProgress)` which generates a design system + 6 pages, records results to the `creative_runs`/`creative_run_pages` tables, and optionally deploys to Netlify.
+
+**Dashboard:** Navigate to `/research/new` to configure model, palette, typography, style, feeling, and temperature. Click "Start Build" to trigger an async creative build with SSE progress streaming at `/research/run/:id`.
+
+**CLI:** `scripts/creative-build.ts` is a thin wrapper:
 ```bash
-npx tsx scripts/creative-build.ts claude-opus-4-6    # generate locally
-# inspect output in runs/creative-*/
-npx tsx scripts/creative-deploy.ts runs/creative-*   # deploy to Netlify
+npx tsx scripts/creative-build.ts --model claude-opus-4-6 --palette sage_sand
+npx tsx scripts/creative-build.ts --model gpt-5.2 --no-db
+npx tsx scripts/creative-deploy.ts runs/creative-*   # manual deploy
 ```
+
+**Supported models:** Anthropic (Opus 4.6, Sonnet 4.5, Haiku 4.5), OpenAI (GPT-5.2, GPT-5.2 Pro, GPT-5 Mini). Provider detected automatically from model name.
+
+**Deploy uniqueness:** Before calling `/build`, the engine clears `netlify_site_id` and `subdomain_slug` on the Dina site spec so each deploy gets a fresh auto-generated subdomain. Without this, every build overwrites the same Netlify site.
 
 Output includes HTML, CSS, accessibility trees (Playwright), full-page screenshots, and a manifest with token counts/costs.
 
@@ -292,6 +311,16 @@ Output includes HTML, CSS, accessibility trees (Playwright), full-page screensho
 - GPT-5.2 requires `max_completion_tokens` (not `max_tokens`) — fixed in `model-client.ts`
 - GPT-5.2 copywriting arguably warmer/better; structural compliance equal
 - Edge function rate limit: 20 generate-page requests per hour per user
+
+### Dashboard Routes (Research)
+
+| Route | Component | Purpose |
+|-------|-----------|---------|
+| `/research` | `Research` | List of creative runs with "New Build" button |
+| `/research/new` | `CreativeBuildConfig` | Config form (model, palette, typography, style, feeling, temperature) |
+| `/research/run/:id` | `CreativeBuildProgress` | SSE progress page with step indicator |
+| `/research/compare` | `ResearchCompare` | Side-by-side run comparison |
+| `/research/:id` | `ResearchDetail` | Run detail with page previews + metrics |
 
 ### Live Sites
 

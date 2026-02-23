@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: "/", label: "Run", icon: "\u25B6" },
   { to: "/results", label: "Results", icon: "\u2630" },
   { to: "/compare", label: "A/B Compare", icon: "\u21C4" },
+  { to: "/research", label: "Research", icon: "\u25C8" },
   { to: "/prompts", label: "Prompts", icon: "\u270E" },
   { to: "/settings", label: "Settings", icon: "\u2699" },
 ];
